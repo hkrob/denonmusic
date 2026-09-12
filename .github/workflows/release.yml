@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Signed release APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require the app module
+        run: |
+          if [ ! -f app/build.gradle.kts ]; then
+            echo "::error::No :app module - nothing to release yet."
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The keystore never lives in the repository. It is held as a base64 secret, written to a
+      # path outside the workspace for the duration of the build, and removed afterwards.
+      - name: Materialise the signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::KEYSTORE_B64 is not set. See README 'Release signing'."
+            exit 1
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Assemble release
+        env:
+          DENONMUSIC_KEYSTORE: ${{ runner.temp }}/release.jks
+          DENONMUSIC_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          DENONMUSIC_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          DENONMUSIC_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
+
+      - name: Attach the APK to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/release/*.apk
+          generate_release_notes: true

@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  protocol:
+    name: Protocol tests (JVM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The protocol modules deliberately carry no Android dependencies, so they build and test
+      # without an SDK. Keeping this a separate job means a protocol regression is reported as
+      # such rather than buried in an Android build log.
+      - name: Run JVM tests
+        run: ./gradlew :core:heos:test --stacktrace
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: protocol-test-report
+          path: core/heos/build/reports/tests/test
+          if-no-files-found: ignore
+
+  probe:
+    name: Probe syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Byte-compile the probe
+        run: python -m py_compile tools/probe.py
+
+  android:
+    name: Debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check whether the app module exists yet
+        id: app
+        run: |
+          if [ -f app/build.gradle.kts ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No :app module yet - skipping the Android build."
+          fi
+
+      - uses: actions/setup-java@v4
+        if: steps.app.outputs.present == 'true'
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+        if: steps.app.outputs.present == 'true'
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.app.outputs.present == 'true'
+
+      - name: Assemble debug
+        if: steps.app.outputs.present == 'true'
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload debug APK
+        if: steps.app.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: denonmusic-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
