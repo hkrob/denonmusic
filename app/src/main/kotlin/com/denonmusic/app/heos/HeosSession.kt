@@ -1,0 +1,118 @@
+package com.denonmusic.app.heos
+
+import com.denonmusic.heos.HeosClient
+import com.denonmusic.heos.HeosConnection
+import com.denonmusic.heos.HeosFrame
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlin.random.Random
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+sealed interface HeosConnectionState {
+    data object Disconnected : HeosConnectionState
+    data object Connecting : HeosConnectionState
+    data class Connected(val host: String) : HeosConnectionState
+    data class Failed(val host: String, val reason: String) : HeosConnectionState
+}
+
+/**
+ * Owns the two sockets a HEOS session needs (spec section on concurrent connections): one
+ * registered for change events, one for request/response commands. Keeping them apart means a burst
+ * of `player_now_playing_progress` events can never delay a queue command's reply.
+ *
+ * Reconnects both with exponential backoff and jitter, and heartbeats the command socket every 25s
+ * per the spec's keepalive guidance.
+ */
+@Singleton
+class HeosSession @Inject constructor() {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private var eventConnection: HeosConnection? = null
+    private var commandConnection: HeosConnection? = null
+    private var client: HeosClient? = null
+    private var sessionJob: kotlinx.coroutines.Job? = null
+
+    private val _state = MutableStateFlow<HeosConnectionState>(HeosConnectionState.Disconnected)
+    val state: StateFlow<HeosConnectionState> = _state.asStateFlow()
+
+    /** Null until a command connection exists; commands throw naturally if used before that. */
+    val heosClient: HeosClient? get() = client
+
+    val events: SharedFlow<HeosFrame>? get() = eventConnection?.events
+
+    fun start(host: String) {
+        if (_state.value.let { it is HeosConnectionState.Connected && it.host == host }) return
+        sessionJob?.cancel()
+        sessionJob = scope.launch { runSession(host) }
+    }
+
+    fun stop() {
+        sessionJob?.cancel()
+        sessionJob = null
+        eventConnection?.close()
+        commandConnection?.close()
+        client = null
+        _state.value = HeosConnectionState.Disconnected
+    }
+
+    private suspend fun runSession(host: String) {
+        var attempt = 0
+        while (kotlinx.coroutines.currentCoroutineContext().isActive) {
+            _state.value = HeosConnectionState.Connecting
+            try {
+                val events = HeosConnection(host)
+                val commands = HeosConnection(host)
+                events.connect()
+                commands.connect()
+                events.command("system", "register_for_change_events", listOf("enable" to "on"))
+
+                eventConnection = events
+                commandConnection = commands
+                client = HeosClient(commands)
+                attempt = 0
+                _state.value = HeosConnectionState.Connected(host)
+
+                heartbeatLoop(commands)
+                // heartbeatLoop only returns when the connection has failed.
+            } catch (t: Throwable) {
+                _state.value = HeosConnectionState.Failed(host, t.message ?: t.toString())
+            } finally {
+                runCatching { eventConnection?.close() }
+                runCatching { commandConnection?.close() }
+                eventConnection = null
+                commandConnection = null
+                client = null
+            }
+
+            attempt++
+            val backoffMs = (BASE_BACKOFF_MS * (1 shl attempt.coerceAtMost(5)))
+                .coerceAtMost(MAX_BACKOFF_MS)
+            delay(backoffMs + Random.nextLong(JITTER_MS))
+        }
+    }
+
+    private suspend fun heartbeatLoop(commands: HeosConnection) {
+        while (commands.isConnected) {
+            delay(HEARTBEAT_INTERVAL_MS)
+            if (!commands.isConnected) break
+            runCatching { commands.command("system", "heart_beat") }.onFailure { return }
+        }
+    }
+
+    companion object {
+        private const val HEARTBEAT_INTERVAL_MS = 25_000L
+        private const val BASE_BACKOFF_MS = 500L
+        private const val MAX_BACKOFF_MS = 30_000L
+        private const val JITTER_MS = 500L
+    }
+}

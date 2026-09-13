@@ -30,10 +30,10 @@ val hasAndroidSdk =
         file("local.properties").exists()
 
 if (hasAndroidSdk) {
-    // include(":app")
+    include(":app")
     // include(":core:avr")
     // include(":core:smb")
-    // include(":core:data")
+    include(":core:data")
     // include(":feature:probe")
 } else {
     logger.lifecycle("No Android SDK detected - configuring JVM modules only.")

@@ -10,11 +10,44 @@ Done and verified (27/27 tests passing):
 - `core/heos` - the full HEOS CLI protocol layer. Pure JVM, no Android dependencies, so
   `./gradlew :core:heos:test` runs anywhere with a JDK 17+.
 - `tools/probe.py` - receiver probe. Standard library only, nothing to install.
-- `.github/workflows` - CI runs the protocol tests; the Android job self-skips until an `:app`
+- `.github/workflows` - CI runs the protocol tests; the Android job now builds `:app` since the
   module exists. A `v*` tag builds a signed APK once the four keystore secrets are set.
+- **Probe run against the real AVR-X4500H (10.1.10.50)** - see "Probe findings" below.
+- **Phase 2**: `:core:data` (Room browse stack + cache, DataStore settings) and `:app` (Hilt,
+  Compose Browse screen, source auto-detect, browse memory, the four `aid` queue actions) exist,
+  build (`./gradlew assembleDebug`), install, and have been driven end-to-end on a real phone
+  against the real receiver (see below). `:core:avr`, `:core:smb`, `:feature:probe` are still
+  commented out in `settings.gradle.kts`.
 
-Not started: every Android module. `:app`, `:core:avr`, `:core:smb`, `:core:data`, `:feature:probe`
-are commented out in `settings.gradle.kts` and get uncommented as they land.
+## Probe findings (2026-09-13, against 10.1.10.50)
+
+- **Home Assistant contention.** This receiver already has HA's `denonavr` integration
+  (`connaught`) permanently attached to it. While that integration holds its connection, raw
+  telnet:23 and HEOS:1255 connections from anywhere else get reset instantly (`ECONNRESET`), and
+  `:10443/ajax/*` hangs on the TLS handshake. Reloading the HA config entry did **not** free the
+  socket — only power-cycling the receiver did. If probing needs the receiver again, expect to
+  need both: the HA integration disabled (it currently is - re-enable it in HA when the app is
+  what should own the connection instead) and, if telnet/HEOS still won't respond after that, a
+  receiver restart.
+- **HEOS input mnemonic: confirmed `SINET`.** `SI?` returns `SICD`/`SINET`/etc.; sending `SINET`
+  selects the network/HEOS input and the receiver echoes `SINET` back as an event. This is the
+  command the auto-power-on path should send.
+- **Speaker OUTPUT map: it's telnet `CV?`, not the `:10443/ajax` family.** Sweep/diff (Stereo →
+  Multi Ch Stereo) showed the ajax speaker/audio endpoints are static setup-menu metadata
+  (`display="1"` flags), not live channel state. `CV?` is: it returns one `CV<channel> <level>`
+  line per **currently active output channel** - `CVFL/CVFR/CVSW/CVSW2` only in Stereo, plus
+  `CVC/CVSL/CVSR/CVSBL/CVSBR` once Multi Ch Stereo is selected. The channels present in the
+  reply are the green tiles; everything else is grey. This is simpler and more reliable than the
+  ajax API, which timed out entirely before the receiver was rebooted.
+- **`SSINFAISSIG ?` / `SSINFAISFSV ?` confirmed**, and self-documenting: e.g.
+  `SSINFAISSIG 02` / `SYSDA PCM`, `SSINFAISFSV 441` (44.1 kHz). No separate lookup table needed -
+  the receiver sends the human-readable label alongside the code.
+- **`sid 1024` ("Local Music") is queueable but currently empty.** `browse/get_source_info`
+  reports it `available: true`, but `browse/browse?sid=1024` returns zero items. No DLNA server or
+  HEOS SMB network share is registered yet on this HEOS system - per the plan's own note, that
+  needs fixing on the Unraid side (Gerbera/Jellyfin, or add the share directly in the HEOS app)
+  before browse-into-folder and the queue actions can be exercised against real content. The app
+  already detects and latches onto sid 1024 correctly; it just has nothing to show yet.
 
 The full design is in [`plan.md`](plan.md). Read it first - it explains why the app is a pure
 controller that never touches the audio, which is the decision the rest of the code follows from.
@@ -78,7 +111,62 @@ The acceptance test for the whole architecture is still the one in the plan: que
 `ReplaceAndPlay`, confirm the track transition is genuinely gapless, then force-stop the app and
 confirm the music keeps playing.
 
+## Playback verified end-to-end (2026-09-13), plus a real protocol bug found and fixed
+
+With no HEOS-indexed source populated yet (DLNA still pending, below), playback was verified via
+the plan's own phase-6 bridge path (`browse/play_stream`), which was added early and gated behind
+a "DEGRADED BRIDGE TEST" field in the empty-state UI specifically for this. A throwaway
+`nginx:alpine` container (`denonmusic-test-http`, removed after) served
+`/mnt/user/arr/media/music` read-only over HTTP so the receiver could fetch files directly - no
+production container touched.
+
+**Formats confirmed against the real AVR-X4500H, receiver-side (`SSINFAISSIG`/`SSINFAISFSV`),
+volume held at 0 throughout:**
+
+| Format | Result |
+|---|---|
+| FLAC 16/44.1 | `SYSDA PCM`, 44.1 kHz - confirmed via the app itself |
+| MP3 | `SYSDA MP3` (the receiver reports MP3 as its own distinct signal type, not generic PCM) |
+| DSF (DSD64, 2.8 MHz) | `SYSDA DSD`, `56M` - confirmed via the app itself, native, not downconverted |
+| DFF (DSD64, 2.8 MHz) | `SYSDA DSD`, `28M` |
+| M4A (Atmos source, E-AC-3 JOC) | `SYSDA PCM`, 48 kHz - expected: HEOS network zone downmixes, doesn't decode Atmos objects |
+
+**Bug found and fixed:** `HeosProtocol.buildCommand` applied `escape()` (`%`→`%25` etc.) to
+*every* attribute, including `url` - even though `url` is pinned last specifically so the receiver
+takes it verbatim (its own doc comment said as much). A real URL's own percent-encoding (`%20`,
+`%5B`, ...) got double-escaped into garbage the receiver's HTTP fetch couldn't resolve, so
+`play_stream` silently kept whatever was already playing instead of erroring. Fixed in
+`core/heos/.../HeosProtocol.kt` (`url`'s value is no longer escaped) with a regression test
+(`HeosProtocolTest`, "does not escape the url attribute's own percent-encoding"). This would have
+hit `add_to_queue` too the moment any `cid`/`mid` contained one of those three characters.
+
+**Also observed:** `SSINFAISSIG`/`SSINFAISFSV` can read stale or transiently inconsistent
+immediately (within ~3s) after a stream change - querying at ~6s+ settle consistently gives a
+clean, matching pair. Worth a short settle delay wherever the app reads these after a play/queue
+action, not just for probing.
+
+## UI: Winamp-style theme
+
+`app/src/main/kotlin/com/denonmusic/app/ui/WinampTheme.kt` - dark LCD-green palette, monospace
+type, hairline Win9x-style bevels instead of Material elevation, and a decorative (non-audio-driven)
+equalizer-bar flourish in the now-playing bar. Applied via `WinampTheme` in `MainActivity`. The
+Browse screen now also has a compact now-playing bar (play/pause, volume slider, track info) wired
+live off the HEOS event socket (`player_now_playing_changed`/`player_state_changed`/
+`player_volume_changed`), not polling.
+
+## DLNA setup - still pending on your end
+
+Jellyfin's template is edited (1900/7359 udp port mappings removed) but **not yet applied** - the
+running container still holds those ports (`ss` on sugar still shows `docker-proxy` owning them).
+Plex's DLNA server is also still off (nothing on port 32469). Until one of these is done, `sid 1024`
+stays empty and the primary HEOS-browse path has nothing to show - the bridge-mode field is a
+stopgap for testing, not a replacement.
+
 ## Continuing the branch
 
-Work continues on `claude/android-smb-denon-player-9710bx`. Next up is phase 2: source
-auto-detection, the browse screen, browse memory, and the four queue actions.
+Work continues on `claude/android-smb-denon-player-9710bx`. Phase 2 (source auto-detection, the
+browse screen, browse memory, the four queue actions) is in place and verified end-to-end against
+the real receiver and phone, modulo the empty-library caveat above. Once a share is registered in
+HEOS, re-verify: opening a folder, all four `aid` actions, and that a force-stop/relaunch restores
+the same folder and scroll position. After that, phase 3 (Now Playing + Queue screens wired to the
+HEOS event stream) is next.

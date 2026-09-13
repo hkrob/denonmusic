@@ -59,6 +59,11 @@ object HeosProtocol {
      * Renders a command string, without the trailing [TERMINATOR].
      *
      * Attribute order is preserved as given, except that [URL] is forced last per the spec.
+     *
+     * [URL]'s value is never passed through [escape]: it is the reason the attribute is forced
+     * last in the first place, so the receiver takes everything after `url=` verbatim. A URL is
+     * already percent-encoded HTTP syntax - escaping its `%` would double-encode every `%20`,
+     * `%5B`, etc. into garbage the receiver's HTTP client can't resolve.
      */
     fun buildCommand(
         group: String,
@@ -66,9 +71,9 @@ object HeosProtocol {
         attributes: List<Pair<String, String>> = emptyList(),
     ): String {
         val (urlAttrs, rest) = attributes.partition { it.first == URL }
-        val ordered = rest + urlAttrs
-        val query =
-            ordered.joinToString("&") { (name, value) -> "$name=${escape(value)}" }
+        val escaped = rest.joinToString("&") { (name, value) -> "$name=${escape(value)}" }
+        val raw = urlAttrs.joinToString("&") { (name, value) -> "$name=$value" }
+        val query = listOf(escaped, raw).filter { it.isNotEmpty() }.joinToString("&")
         return if (query.isEmpty()) "heos://$group/$command" else "heos://$group/$command?$query"
     }
 

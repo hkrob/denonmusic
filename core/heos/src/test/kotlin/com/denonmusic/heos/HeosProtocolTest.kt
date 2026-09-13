@@ -48,6 +48,19 @@ class HeosProtocolTest {
     }
 
     @Test
+    fun `does not escape the url attribute's own percent-encoding`() {
+        // A real URL already carries percent-encoding (spaces, brackets, etc). Escaping its `%`
+        // would double-encode "%20" into "%2520", which 404s on the receiver's HTTP fetch - this
+        // is exactly the bug that made a bridge-mode DSD test silently keep playing a stale track.
+        val command = HeosProtocol.buildCommand(
+            group = "browse",
+            command = "play_stream",
+            attributes = listOf("pid" to "1", HeosProtocol.URL to "http://host/A%20%5BB%5D.dsf"),
+        )
+        assertEquals("heos://browse/play_stream?pid=1&url=http://host/A%20%5BB%5D.dsf", command)
+    }
+
+    @Test
     fun `omits the query entirely when there are no attributes`() {
         assertEquals("heos://system/heart_beat", HeosProtocol.buildCommand("system", "heart_beat"))
     }

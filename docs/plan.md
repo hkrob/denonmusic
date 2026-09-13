@@ -84,24 +84,16 @@ an event, so the UI always reflects the receiver, never optimistic local state.
 ## Speaker OUTPUT map + now-playing technical detail
 
 The Denon AVR Remote app renders configured-but-silent channels grey and currently-outputting
-channels green (`SW FL FR` lit, `C SL SR SBL SBR` grey, in Stereo). That data is retrievable; the
-exact endpoint needs pinning down on your unit, so the plan is *discovery by sweep and diff*, not a
-guess.
+channels green (`SW FL FR` lit, `C SL SR SBL SBR` grey, in Stereo). That data is retrievable.
 
-**Candidate transports, ranked:**
-
-1. `https://<avr>:10443/ajax/speakers/get_config?type=1..8` and `/ajax/general/get_config?type=12`
-   (the latter is known to return `<InputSignal>`). This family is what the modern Denon app uses.
-2. Telnet `SSINF` family — `SSINFAISSIG ?` (signal type: analog / PCM / DSD) and `SSINFAISFSV ?`
-   (sample rate) are confirmed; neighbouring `SSINF*` and `SSSPC*` commands likely carry speaker
-   config and active-channel data.
-3. `/goform/AppCommand0300.xml` POST.
-
-**Discovery method (step 1 of the build):** the probe sweeps every
-`ajax/{home,audio,video,inputs,speakers,network,general}/get_config?type=N` combination and every
-`SSINF*`/`SSSPC*` telnet query, saves the full response set, then you change sound mode
-(Stereo → Multi Ch Stereo → Direct) and it sweeps again and **diffs**. The field that tracks the
-green tiles falls out of the diff immediately. ~50 requests, deterministic, one sitting.
+**Resolved by sweep/diff against the real AVR-X4500H (2026-09-13): it's telnet `CV?`.** Sending
+`CV?` returns one `CV<channel> <level>` line per currently-active output channel -
+`CVFL/CVFR/CVSW/CVSW2` only in Stereo, and `CVC/CVSL/CVSR/CVSBL/CVSBR` join the list the moment
+Multi Ch Stereo is selected. The channels present in the reply are the green tiles; every
+configured-but-absent channel is grey. The `:10443/ajax/speakers/*` and `/ajax/audio/*` family
+turned out to be static setup-menu metadata (per-field `display="1"` flags for which menu rows are
+visible), not live channel state, and is not needed for this. See `docs/local-setup.md` for the
+full probe write-up.
 
 ### Now Playing — technical panel
 
