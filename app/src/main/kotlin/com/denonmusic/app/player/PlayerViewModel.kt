@@ -3,6 +3,8 @@ package com.denonmusic.app.player
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denonmusic.app.avr.AvrSession
+import com.denonmusic.app.bridge.BridgeQueueController
+import com.denonmusic.app.bridge.BridgeQueueState
 import com.denonmusic.app.heos.HeosConnectionState
 import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.avr.BitPerfectPolicy
@@ -33,7 +35,20 @@ data class PlayerUiState(
     val progress: Progress = Progress(0, 0),
     val queue: List<QueueItem> = emptyList(),
     val message: String? = null,
-)
+    val bridgeQueue: BridgeQueueState = BridgeQueueState(),
+) {
+    /**
+     * True while [bridgeQueue] holds the track actually driving the receiver right now. Trusting our
+     * own queue state as ground truth, rather than trying to infer it from HEOS's now-playing report,
+     * is deliberate: the AVR-X4500H probed for this project actually reads embedded tags out of a
+     * `play_stream` file and reports the *real* title/artist/album once it's parsed them - "generic
+     * label means bridge mode" turned out to be false in practice, not just theoretically fragile.
+     * [BrowseViewModel]'s primary-HEOS queue actions call `bridgeQueueController.clear()` when the
+     * user explicitly starts real HEOS playback, which is what turns this back off.
+     */
+    val isBridgeModeActive: Boolean
+        get() = bridgeQueue.currentItem != null
+}
 
 /**
  * Owns everything about "the currently selected HEOS player" that Browse, Now Playing and Queue all
@@ -46,6 +61,7 @@ class PlayerViewModel @Inject constructor(
     private val session: HeosSession,
     private val avrSession: AvrSession,
     private val settings: SettingsRepository,
+    private val bridgeQueueController: BridgeQueueController,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
@@ -63,6 +79,11 @@ class PlayerViewModel @Inject constructor(
                     eventsJob?.cancel()
                     _uiState.value = PlayerUiState()
                 }
+            }
+        }
+        viewModelScope.launch {
+            bridgeQueueController.state.collectLatest { bridgeState ->
+                _uiState.value = _uiState.value.copy(bridgeQueue = bridgeState)
             }
         }
     }
@@ -148,12 +169,14 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun playNext() {
+        if (_uiState.value.isBridgeModeActive) return bridgeQueueController.next()
         val client = session.heosClient ?: return
         val pid = _uiState.value.pid ?: return
         viewModelScope.launch { runCatching { client.playNext(pid) } }
     }
 
     fun playPrevious() {
+        if (_uiState.value.isBridgeModeActive) return bridgeQueueController.previous()
         val client = session.heosClient ?: return
         val pid = _uiState.value.pid ?: return
         viewModelScope.launch { runCatching { client.playPrevious(pid) } }
@@ -169,6 +192,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun setRepeat(mode: RepeatMode) {
+        if (_uiState.value.isBridgeModeActive) return bridgeQueueController.setRepeat(mode)
         val client = session.heosClient ?: return
         val pid = _uiState.value.pid ?: return
         val shuffle = _uiState.value.shuffle ?: false
@@ -179,6 +203,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun toggleShuffle() {
+        if (_uiState.value.isBridgeModeActive) return bridgeQueueController.toggleShuffle()
         val client = session.heosClient ?: return
         val pid = _uiState.value.pid ?: return
         val repeat = _uiState.value.repeat ?: RepeatMode.Off
@@ -240,4 +265,12 @@ class PlayerViewModel @Inject constructor(
     fun dismissMessage() {
         _uiState.value = _uiState.value.copy(message = null)
     }
+
+    // -- phase-6 bridge queue pass-throughs, for QueueScreen when isBridgeModeActive -------------
+
+    fun playBridgeQueueItem(index: Int) = bridgeQueueController.playAt(index)
+
+    fun removeBridgeQueueItem(index: Int) = bridgeQueueController.removeAt(index)
+
+    fun clearBridgeQueue() = bridgeQueueController.clear()
 }

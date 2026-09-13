@@ -48,14 +48,23 @@ fun MiniPlayerBar(state: PlayerUiState, onTogglePlay: () -> Unit, onExpand: () -
             )
         }
         Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
-            Text(
-                text = np?.song?.takeIf { it.isNotBlank() } ?: "NO TRACK",
-                style = Winamp.labelStyle,
-                color = Winamp.Green,
-            )
-            val subtitle = listOfNotNull(np?.artist?.takeIf { it.isNotBlank() }, np?.album?.takeIf { it.isNotBlank() })
-                .joinToString(" — ")
-            Text(subtitle.ifEmpty { "—" }, style = Winamp.smallStyle)
+            if (state.isBridgeModeActive) {
+                Text(
+                    text = state.bridgeQueue.currentItem?.displayName ?: "NO TRACK",
+                    style = Winamp.labelStyle,
+                    color = Winamp.Green,
+                )
+                Text("DEGRADED BRIDGE MODE", style = Winamp.smallStyle, color = Winamp.Amber)
+            } else {
+                Text(
+                    text = np?.song?.takeIf { it.isNotBlank() } ?: "NO TRACK",
+                    style = Winamp.labelStyle,
+                    color = Winamp.Green,
+                )
+                val subtitle = listOfNotNull(np?.artist?.takeIf { it.isNotBlank() }, np?.album?.takeIf { it.isNotBlank() })
+                    .joinToString(" — ")
+                Text(subtitle.ifEmpty { "—" }, style = Winamp.smallStyle)
+            }
         }
         EqualizerBars(
             levels = listOf(0.3f, 0.7f, 0.5f, 0.9f, 0.4f, 0.6f, 0.2f, 0.8f),

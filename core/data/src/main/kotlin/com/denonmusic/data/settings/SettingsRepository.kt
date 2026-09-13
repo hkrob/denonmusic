@@ -26,6 +26,8 @@ data class AppSettings(
     val smbShare: String? = null,
     val smbUsername: String? = null,
     val smbPassword: String? = null,
+    /** The SMB file browser's last folder, `/`-joined, so reopening it doesn't reset to the root. */
+    val smbBrowsePath: String? = null,
 ) {
     companion object {
         const val DEFAULT_AVR_INPUT_MNEMONIC: String = "NET"
@@ -49,6 +51,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
             smbShare = prefs[KEY_SMB_SHARE],
             smbUsername = prefs[KEY_SMB_USERNAME],
             smbPassword = prefs[KEY_SMB_PASSWORD],
+            smbBrowsePath = prefs[KEY_SMB_BROWSE_PATH],
         )
     }
 
@@ -81,6 +84,10 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         }
     }
 
+    suspend fun setSmbBrowsePath(path: String) {
+        dataStore.edit { it[KEY_SMB_BROWSE_PATH] = path }
+    }
+
     companion object {
         private val KEY_AVR_HOST = stringPreferencesKey("avr_host")
         private val KEY_SELECTED_SID = stringPreferencesKey("selected_source_sid")
@@ -91,6 +98,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         private val KEY_SMB_SHARE = stringPreferencesKey("smb_share")
         private val KEY_SMB_USERNAME = stringPreferencesKey("smb_username")
         private val KEY_SMB_PASSWORD = stringPreferencesKey("smb_password")
+        private val KEY_SMB_BROWSE_PATH = stringPreferencesKey("smb_browse_path")
 
         const val PREFERENCES_NAME: String = "denonmusic_settings"
     }

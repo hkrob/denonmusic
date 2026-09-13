@@ -13,9 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOn
-import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -37,10 +34,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.denonmusic.app.player.PlayerUiState
 import com.denonmusic.app.player.PlayerViewModel
+import com.denonmusic.app.player.icon
+import com.denonmusic.app.player.next
 import com.denonmusic.app.ui.Winamp
 import com.denonmusic.app.ui.bevel
 import com.denonmusic.heos.PlayState
 import com.denonmusic.heos.RepeatMode
+import com.denonmusic.smb.AudioFormatInfo
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,15 +74,31 @@ fun NowPlayingScreen(playerViewModel: PlayerViewModel, onBack: () -> Unit) {
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            val np = state.nowPlaying
-            Text(
-                np?.song?.takeIf { it.isNotBlank() } ?: "NO TRACK",
-                style = Winamp.titleStyle,
-                color = Winamp.Green,
-            )
-            val subtitle = listOfNotNull(np?.artist?.takeIf { it.isNotBlank() }, np?.album?.takeIf { it.isNotBlank() })
-                .joinToString(" — ")
-            Text(subtitle.ifEmpty { "—" }, style = Winamp.labelStyle, modifier = Modifier.padding(top = 8.dp))
+            if (state.isBridgeModeActive) {
+                val item = state.bridgeQueue.currentItem
+                Text(item?.displayName ?: "NO TRACK", style = Winamp.titleStyle, color = Winamp.Green)
+                Text(
+                    "DEGRADED BRIDGE MODE",
+                    style = Winamp.smallStyle,
+                    color = Winamp.Amber,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                Text(
+                    state.bridgeQueue.currentFormatInfo?.summary() ?: "reading format…",
+                    style = Winamp.labelStyle,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            } else {
+                val np = state.nowPlaying
+                Text(
+                    np?.song?.takeIf { it.isNotBlank() } ?: "NO TRACK",
+                    style = Winamp.titleStyle,
+                    color = Winamp.Green,
+                )
+                val subtitle = listOfNotNull(np?.artist?.takeIf { it.isNotBlank() }, np?.album?.takeIf { it.isNotBlank() })
+                    .joinToString(" — ")
+                Text(subtitle.ifEmpty { "—" }, style = Winamp.labelStyle, modifier = Modifier.padding(top = 8.dp))
+            }
 
             ProgressRow(state)
 
@@ -107,18 +123,20 @@ fun NowPlayingScreen(playerViewModel: PlayerViewModel, onBack: () -> Unit) {
                 }
             }
 
+            val effectiveRepeat = if (state.isBridgeModeActive) state.bridgeQueue.repeat else state.repeat
+            val effectiveShuffle = if (state.isBridgeModeActive) state.bridgeQueue.shuffle else state.shuffle
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                 horizontalArrangement = Arrangement.Center,
             ) {
-                IconButton(onClick = { playerViewModel.setRepeat(state.repeat.next()) }) {
-                    Icon(state.repeat.icon(), contentDescription = "Repeat mode", tint = Winamp.Green)
+                IconButton(onClick = { playerViewModel.setRepeat(effectiveRepeat.next()) }) {
+                    Icon(effectiveRepeat.icon(), contentDescription = "Repeat mode", tint = Winamp.Green)
                 }
                 IconButton(onClick = playerViewModel::toggleShuffle) {
                     Icon(
                         Icons.Filled.Shuffle,
                         contentDescription = "Shuffle",
-                        tint = if (state.shuffle == true) Winamp.Green else Winamp.GreenDim,
+                        tint = if (effectiveShuffle == true) Winamp.Green else Winamp.GreenDim,
                     )
                 }
             }
@@ -176,15 +194,17 @@ private fun Long.toClock(): String {
     return String.format(Locale.US, "%d:%02d", minutes, seconds)
 }
 
-/** Cycles Off -> All -> One -> Off for the single repeat button per the plan's chip behaviour. */
-private fun RepeatMode?.next(): RepeatMode = when (this) {
-    RepeatMode.Off, null -> RepeatMode.All
-    RepeatMode.All -> RepeatMode.One
-    RepeatMode.One -> RepeatMode.Off
-}
-
-private fun RepeatMode?.icon() = when (this) {
-    RepeatMode.All -> Icons.Filled.RepeatOn
-    RepeatMode.One -> Icons.Filled.RepeatOne
-    else -> Icons.Filled.Repeat
+/** e.g. "FLAC 24-bit/192.0 kHz Stereo" or "DSF 2.8 MHz Stereo" for the bridge mode technical line. */
+private fun AudioFormatInfo.summary(): String = buildString {
+    append(container.name.uppercase())
+    append(' ')
+    if (isDsd) {
+        append("%.1f MHz".format(Locale.US, sampleRateHz / 1_000_000.0))
+    } else {
+        append("$bitsPerSample-bit/")
+        append("%.1f kHz".format(Locale.US, sampleRateHz / 1_000.0))
+    }
+    append(' ')
+    append(if (channels <= 2) if (channels == 1) "Mono" else "Stereo" else "${channels}ch")
+    bitrateKbps?.let { append(" • $it kbps") }
 }

@@ -2,7 +2,8 @@ package com.denonmusic.app.browse
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.denonmusic.app.bridge.SmbBridgeService
+import com.denonmusic.app.bridge.BridgeQueueController
+import com.denonmusic.app.bridge.BridgeQueueItem
 import com.denonmusic.app.heos.HeosConnectionState
 import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.data.browse.BrowseStackEntity
@@ -43,7 +44,7 @@ class BrowseViewModel @Inject constructor(
     private val browseRepository: BrowseRepository,
     private val sourceRepository: SourceRepository,
     private val settings: SettingsRepository,
-    private val smbBridgeService: SmbBridgeService,
+    private val bridgeQueueController: BridgeQueueController,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BrowseUiState())
@@ -169,6 +170,9 @@ class BrowseViewModel @Inject constructor(
             }.onFailure { e ->
                 _uiState.value = _uiState.value.copy(message = e.message ?: "Queue action failed")
             }.onSuccess {
+                // The user explicitly chose the primary HEOS-indexed path - relinquish the bridge
+                // queue's ownership of Now Playing / transport control back to real HEOS behaviour.
+                bridgeQueueController.clear()
                 _uiState.value = _uiState.value.copy(message = "${action.label}: ${item.name}")
             }
         }
@@ -185,6 +189,7 @@ class BrowseViewModel @Inject constructor(
             }.onFailure { e ->
                 _uiState.value = _uiState.value.copy(message = e.message ?: "Queue action failed")
             }.onSuccess {
+                bridgeQueueController.clear()
                 _uiState.value = _uiState.value.copy(message = "${action.label}: ${current.displayName}")
             }
         }
@@ -195,10 +200,8 @@ class BrowseViewModel @Inject constructor(
     }
 
     /**
-     * Bridge fallback ([AddCriteria] doesn't apply - this is `browse/play_stream`, not a queue
-     * entry): starts exactly one stream, no next-track, no real queue. Kept out of the primary
-     * browse flow deliberately per the plan - this exists only for exercising playback on the
-     * receiver when no HEOS-indexed source is available yet.
+     * The raw-URL tester: bypasses the bridge queue entirely and just plays exactly one stream via
+     * `play_stream` - for exercising the receiver without any SMB share configured at all.
      */
     fun playBridgeUrl(url: String) {
         val client = session.heosClient ?: return
@@ -210,20 +213,30 @@ class BrowseViewModel @Inject constructor(
         }
     }
 
-    /**
-     * The bridge fallback's real form per the plan: [path] is a file location within the saved SMB
-     * share, not an arbitrary URL - [SmbBridgeService] serves it itself (Range-capable HTTP) and this
-     * hands the resulting local URL to [playBridgeUrl]'s same one-shot `play_stream` path.
-     */
+    /** The manual "type a path" field: a one-item bridge queue, same mechanism as folder playback. */
     fun playBridgeFromSmb(path: String) {
-        pid ?: return
-        viewModelScope.launch {
-            val url = smbBridgeService.urlFor(path)
-            if (url == null) {
-                _uiState.value = _uiState.value.copy(message = "Set SMB host/share in Settings first, or path not found")
-                return@launch
-            }
-            playBridgeUrl(url)
-        }
+        bridgeQueueController.replaceQueueAndPlay(listOf(path.toBridgeQueueItem()))
+        _uiState.value = _uiState.value.copy(message = "Streaming (degraded bridge mode)")
     }
+
+    /**
+     * The SMB file browser's tap behaviour: replaces the bridge queue with every file in the current
+     * folder and starts at [startIndex] - tapping any track plays the rest of its folder afterward,
+     * the plan's "play a folder, not just one file" gap that a raw `play_stream` call alone can't
+     * cover (no real HEOS queue exists for it).
+     */
+    fun playBridgeFolder(paths: List<String>, startIndex: Int) {
+        if (paths.isEmpty()) return
+        bridgeQueueController.replaceQueueAndPlay(paths.map { it.toBridgeQueueItem() }, startIndex)
+        _uiState.value = _uiState.value.copy(message = "Streaming (degraded bridge mode)")
+    }
+
+    /** Appends without disturbing whatever's already playing - the browser's "add to queue" action. */
+    fun addBridgeToQueue(paths: List<String>) {
+        if (paths.isEmpty()) return
+        bridgeQueueController.addToQueue(paths.map { it.toBridgeQueueItem() })
+        _uiState.value = _uiState.value.copy(message = "Added ${paths.size} to bridge queue")
+    }
+
+    private fun String.toBridgeQueueItem() = BridgeQueueItem(path = this, displayName = substringAfterLast('/'))
 }

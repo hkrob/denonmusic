@@ -2,8 +2,10 @@ package com.denonmusic.app.bridge
 
 import com.denonmusic.app.media.MediaInfoRepository
 import com.denonmusic.data.settings.SettingsRepository
+import com.denonmusic.smb.AudioFormatInfo
 import com.denonmusic.smb.SmbBridgeServer
 import com.denonmusic.smb.SmbCredentials
+import com.denonmusic.smb.SmbOverlay
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.util.UUID
@@ -32,12 +34,7 @@ class SmbBridgeService @Inject constructor(
 
     /** Null when SMB credentials aren't configured yet, or the path doesn't resolve to a real file. */
     suspend fun urlFor(path: String): String? {
-        val saved = settings.settings.first()
-        val host = saved.smbHost?.takeIf { it.isNotBlank() } ?: return null
-        val share = saved.smbShare?.takeIf { it.isNotBlank() } ?: return null
-        val credentials = SmbCredentials(host, share, saved.smbUsername.orEmpty(), saved.smbPassword.orEmpty())
-
-        val overlay = mediaInfoRepository.overlayFor(credentials)
+        val overlay = currentOverlay() ?: return null
         // jcifs-ng blocks on real socket I/O; this must never run on the caller's dispatcher (Main,
         // via viewModelScope) or Android throws NetworkOnMainThreadException.
         val resource = withContext(Dispatchers.IO) {
@@ -50,6 +47,20 @@ class SmbBridgeService @Inject constructor(
 
         val ip = localLanAddress() ?: return null
         return "http://$ip:${server.port}/$token"
+    }
+
+    /** For the Now Playing display - the same file-side truth the plan's chain-integrity check uses. */
+    suspend fun formatInfoFor(path: String): AudioFormatInfo? {
+        val overlay = currentOverlay() ?: return null
+        return mediaInfoRepository.getFormatInfo(overlay, path)
+    }
+
+    private suspend fun currentOverlay(): SmbOverlay? {
+        val saved = settings.settings.first()
+        val host = saved.smbHost?.takeIf { it.isNotBlank() } ?: return null
+        val share = saved.smbShare?.takeIf { it.isNotBlank() } ?: return null
+        val credentials = SmbCredentials(host, share, saved.smbUsername.orEmpty(), saved.smbPassword.orEmpty())
+        return mediaInfoRepository.overlayFor(credentials)
     }
 
     /** First non-loopback IPv4 address on an "up" interface - the address the AVR can reach us at. */

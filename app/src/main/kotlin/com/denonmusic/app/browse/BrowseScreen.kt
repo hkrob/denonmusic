@@ -2,7 +2,6 @@ package com.denonmusic.app.browse
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -119,7 +118,20 @@ fun BrowseScreen(viewModel: BrowseViewModel = hiltViewModel()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("NOTHING HERE.", style = Winamp.labelStyle, color = Winamp.GreenDim)
-                        BridgeModeTester(onPlayUrl = viewModel::playBridgeUrl, onPlaySmbPath = viewModel::playBridgeFromSmb)
+                        Text(
+                            "No content indexed by HEOS yet - register a DLNA server or\n" +
+                                "SMB network share in the HEOS app to browse normally here.",
+                            style = Winamp.smallStyle,
+                            color = Winamp.GreenDim,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                        BridgeModeTester(
+                            onPlayUrl = viewModel::playBridgeUrl,
+                            onPlaySmbPath = viewModel::playBridgeFromSmb,
+                            onPlayFolder = viewModel::playBridgeFolder,
+                            onAddToQueue = viewModel::addBridgeToQueue,
+                        )
                     }
                 }
             } else {
@@ -242,6 +254,8 @@ private fun BrowseRow(item: BrowseItem, onOpen: () -> Unit, onAction: (QueueActi
 private fun BridgeModeTester(
     onPlayUrl: (String) -> Unit,
     onPlaySmbPath: (String) -> Unit,
+    onPlayFolder: (paths: List<String>, startIndex: Int) -> Unit,
+    onAddToQueue: (paths: List<String>) -> Unit,
     smbBrowseViewModel: SmbBrowseViewModel = hiltViewModel(),
 ) {
     var browserOpen by remember { mutableStateOf(false) }
@@ -261,7 +275,7 @@ private fun BridgeModeTester(
             )
         }
         if (browserOpen) {
-            SmbFileBrowser(viewModel = smbBrowseViewModel, onPlay = { entry -> onPlaySmbPath(entry.path) })
+            SmbFileBrowser(viewModel = smbBrowseViewModel, onPlayFolder = onPlayFolder, onAddToQueue = onAddToQueue)
         }
 
         Text("Or type a file path directly:", style = Winamp.smallStyle, modifier = Modifier.padding(top = 12.dp))
@@ -300,8 +314,13 @@ private fun BridgeModeTester(
 
 /** Breadcrumb + a bounded-height folder listing, so tapping through the SMB share doesn't need a typed path. */
 @Composable
-private fun SmbFileBrowser(viewModel: SmbBrowseViewModel, onPlay: (SmbEntry) -> Unit) {
+private fun SmbFileBrowser(
+    viewModel: SmbBrowseViewModel,
+    onPlayFolder: (paths: List<String>, startIndex: Int) -> Unit,
+    onAddToQueue: (paths: List<String>) -> Unit,
+) {
     val state by viewModel.uiState.collectAsState()
+    val files = state.entries.filter { !it.isDirectory }
 
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         when (state.hasCredentials) {
@@ -331,6 +350,16 @@ private fun SmbFileBrowser(viewModel: SmbBrowseViewModel, onPlay: (SmbEntry) -> 
                         }
                     }
                 }
+                if (files.isNotEmpty()) {
+                    Row(modifier = Modifier.padding(top = 4.dp)) {
+                        TextButton(onClick = { onPlayFolder(files.map { it.path }, 0) }) {
+                            Text("PLAY ALL IN FOLDER", style = Winamp.smallStyle, color = Winamp.Amber)
+                        }
+                        TextButton(onClick = { onAddToQueue(files.map { it.path }) }) {
+                            Text("ADD FOLDER TO QUEUE", style = Winamp.smallStyle, color = Winamp.Amber)
+                        }
+                    }
+                }
                 Box(modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp).background(Winamp.Background).bevel(inset = true)) {
                     when {
                         state.isLoading -> Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
@@ -353,7 +382,11 @@ private fun SmbFileBrowser(viewModel: SmbBrowseViewModel, onPlay: (SmbEntry) -> 
                                 SmbEntryRow(
                                     entry = entry,
                                     onOpen = { viewModel.enter(entry) },
-                                    onPlay = { onPlay(entry) },
+                                    onPlayFromHere = {
+                                        val startIndex = files.indexOf(entry).coerceAtLeast(0)
+                                        onPlayFolder(files.map { it.path }, startIndex)
+                                    },
+                                    onAddToQueue = { onAddToQueue(listOf(entry.path)) },
                                 )
                             }
                         }
@@ -364,21 +397,40 @@ private fun SmbFileBrowser(viewModel: SmbBrowseViewModel, onPlay: (SmbEntry) -> 
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SmbEntryRow(entry: SmbEntry, onOpen: () -> Unit, onPlay: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = { if (entry.isDirectory) onOpen() else onPlay() })
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            if (entry.isDirectory) Icons.Filled.Folder else Icons.Filled.MusicNote,
-            contentDescription = null,
-            tint = if (entry.isDirectory) Winamp.Amber else Winamp.Green,
-            modifier = Modifier.size(20.dp),
-        )
-        Text(entry.name, style = Winamp.smallStyle, color = Winamp.Green, modifier = Modifier.padding(start = 10.dp))
+private fun SmbEntryRow(entry: SmbEntry, onOpen: () -> Unit, onPlayFromHere: () -> Unit, onAddToQueue: () -> Unit) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = { if (entry.isDirectory) onOpen() else onPlayFromHere() },
+                    onLongClick = { if (!entry.isDirectory) menuExpanded = true },
+                )
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                if (entry.isDirectory) Icons.Filled.Folder else Icons.Filled.MusicNote,
+                contentDescription = null,
+                tint = if (entry.isDirectory) Winamp.Amber else Winamp.Green,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(entry.name, style = Winamp.smallStyle, color = Winamp.Green, modifier = Modifier.padding(start = 10.dp))
+        }
+        if (!entry.isDirectory) {
+            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                DropdownMenuItem(
+                    text = { Text("Play folder from here") },
+                    onClick = { menuExpanded = false; onPlayFromHere() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Add to queue") },
+                    onClick = { menuExpanded = false; onAddToQueue() },
+                )
+            }
+        }
     }
 }

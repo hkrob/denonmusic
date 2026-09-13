@@ -2,6 +2,7 @@ package com.denonmusic.app.queue
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -41,7 +43,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.denonmusic.app.bridge.BridgeQueueItem
 import com.denonmusic.app.player.PlayerViewModel
+import com.denonmusic.app.player.icon
+import com.denonmusic.app.player.next
 import com.denonmusic.app.ui.Winamp
 import com.denonmusic.app.ui.bevel
 import com.denonmusic.heos.QueueItem
@@ -60,28 +65,57 @@ fun QueueScreen(playerViewModel: PlayerViewModel) {
         }
     }
 
+    val bridgeMode = state.bridgeQueue.items.isNotEmpty()
+
     Scaffold(
         containerColor = Winamp.Background,
         topBar = {
             TopAppBar(
-                title = { Text("Q U E U E", style = Winamp.titleStyle) },
+                title = { Text(if (bridgeMode) "B R I D G E   Q U E U E" else "Q U E U E", style = Winamp.titleStyle) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Winamp.Panel,
                     titleContentColor = Winamp.Green,
                 ),
                 actions = {
-                    TextButton(onClick = { showSaveDialog = true }, enabled = state.queue.isNotEmpty()) {
-                        Text("SAVE", style = Winamp.labelStyle, color = Winamp.Amber)
-                    }
-                    TextButton(onClick = playerViewModel::clearQueue, enabled = state.queue.isNotEmpty()) {
-                        Text("CLEAR", style = Winamp.labelStyle, color = Winamp.Amber)
+                    if (bridgeMode) {
+                        IconButton(onClick = { playerViewModel.setRepeat(state.bridgeQueue.repeat.next()) }) {
+                            Icon(state.bridgeQueue.repeat.icon(), contentDescription = "Repeat mode", tint = Winamp.Green)
+                        }
+                        IconButton(onClick = playerViewModel::toggleShuffle) {
+                            Icon(
+                                Icons.Filled.Shuffle,
+                                contentDescription = "Shuffle",
+                                tint = if (state.bridgeQueue.shuffle) Winamp.Green else Winamp.GreenDim,
+                            )
+                        }
+                        TextButton(onClick = playerViewModel::clearBridgeQueue) {
+                            Text("CLEAR", style = Winamp.labelStyle, color = Winamp.Amber)
+                        }
+                    } else {
+                        TextButton(onClick = { showSaveDialog = true }, enabled = state.queue.isNotEmpty()) {
+                            Text("SAVE", style = Winamp.labelStyle, color = Winamp.Amber)
+                        }
+                        TextButton(onClick = playerViewModel::clearQueue, enabled = state.queue.isNotEmpty()) {
+                            Text("CLEAR", style = Winamp.labelStyle, color = Winamp.Amber)
+                        }
                     }
                 },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        if (state.queue.isEmpty()) {
+        if (bridgeMode) {
+            LazyColumn(modifier = Modifier.fillMaxSize().background(Winamp.Background).padding(padding)) {
+                itemsIndexed(state.bridgeQueue.items) { index, item ->
+                    BridgeQueueRow(
+                        item = item,
+                        isCurrent = index == state.bridgeQueue.currentIndex,
+                        onTap = { playerViewModel.playBridgeQueueItem(index) },
+                        onRemove = { playerViewModel.removeBridgeQueueItem(index) },
+                    )
+                }
+            }
+        } else if (state.queue.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize().background(Winamp.Background).padding(padding),
                 contentAlignment = Alignment.Center,
@@ -193,6 +227,55 @@ private fun QueueRow(
                     onClick = { menuExpanded = false; onRemove() },
                 )
             }
+        }
+    }
+}
+
+/** No move-up/down here - the phase-6 bridge queue is a simple client-side list, not a real HEOS
+ * queue, so reordering isn't wired up; play-now and remove cover what this fallback needs. */
+@Composable
+private fun BridgeQueueRow(item: BridgeQueueItem, isCurrent: Boolean, onTap: () -> Unit, onRemove: () -> Unit) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) {
+                onRemove()
+                true
+            } else {
+                false
+            }
+        },
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Winamp.Amber).padding(horizontal = 16.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = Winamp.Background)
+            }
+        },
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(if (isCurrent) Winamp.PanelLight else Winamp.Background)
+                .clickable(onClick = onTap)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.MusicNote,
+                contentDescription = null,
+                tint = if (isCurrent) Winamp.Green else Winamp.GreenDim,
+            )
+            Text(
+                item.displayName,
+                style = Winamp.labelStyle,
+                color = if (isCurrent) Winamp.Green else Winamp.GreenDim,
+                modifier = Modifier.padding(start = 12.dp),
+            )
         }
     }
 }

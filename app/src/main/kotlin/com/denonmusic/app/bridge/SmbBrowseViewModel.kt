@@ -44,22 +44,33 @@ class SmbBrowseViewModel @Inject constructor(
     val uiState: StateFlow<SmbBrowseUiState> = _uiState.asStateFlow()
 
     private var overlay: SmbOverlay? = null
+    private var lastCredentials: SmbCredentials? = null
 
-    /** Resolves credentials and loads the share root. Safe to call repeatedly (e.g. re-opening). */
+    /**
+     * Resolves credentials and loads the last-browsed folder (the share root on a first visit).
+     * Safe to call repeatedly - e.g. every time the collapsible browser panel is expanded again -
+     * without losing the current folder: if the same credentials are already active, this is a no-op
+     * rather than a reset back to the root.
+     */
     fun open() {
         viewModelScope.launch {
             val saved = settings.settings.first()
             val host = saved.smbHost?.takeIf { it.isNotBlank() }
             val share = saved.smbShare?.takeIf { it.isNotBlank() }
             if (host == null || share == null) {
+                overlay = null
+                lastCredentials = null
                 _uiState.value = SmbBrowseUiState(hasCredentials = false)
                 return@launch
             }
-            overlay = mediaInfoRepository.overlayFor(
-                SmbCredentials(host, share, saved.smbUsername.orEmpty(), saved.smbPassword.orEmpty()),
-            )
+            val credentials = SmbCredentials(host, share, saved.smbUsername.orEmpty(), saved.smbPassword.orEmpty())
+            if (credentials == lastCredentials && overlay != null) return@launch
+
+            lastCredentials = credentials
+            overlay = mediaInfoRepository.overlayFor(credentials)
             _uiState.value = SmbBrowseUiState(hasCredentials = true)
-            load(emptyList())
+            val savedSegments = saved.smbBrowsePath?.takeIf { it.isNotBlank() }?.split("/").orEmpty()
+            load(savedSegments)
         }
     }
 
@@ -84,11 +95,18 @@ class SmbBrowseViewModel @Inject constructor(
             val entries = withContext(Dispatchers.IO) {
                 runCatching { activeOverlay.listDirectory(path) }.getOrNull()
             }
+            if (entries == null && segments.isNotEmpty()) {
+                // A restored (or bookmarked) folder that no longer exists - land somewhere real
+                // rather than an error screen, the same recovery the primary HEOS browse stack uses.
+                load(emptyList())
+                return@launch
+            }
             _uiState.value = _uiState.value.copy(
                 entries = entries.orEmpty(),
                 isLoading = false,
                 error = if (entries == null) "Couldn't list this folder" else null,
             )
+            settings.setSmbBrowsePath(path)
         }
     }
 }

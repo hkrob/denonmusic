@@ -382,6 +382,69 @@ Paused afterward via `set_play_state`. This closes the one gap the original phas
 open - the full loop (browse -> bridge URL -> `play_stream` -> audible, decoded output on the
 receiver) is now confirmed, not just the HTTP layer in isolation.
 
+## Bridge queue, folder playback, and real Now Playing info (2026-09-13)
+
+Four follow-up requests turned into one connected piece of work: real technical info in Now Playing
+instead of a bare "Url Stream" label, an explanation of what the empty Browse state actually means,
+switching the SMB share to `\\10.1.10.10\music` (`denon`/`denon` - a top-level share whose root is
+already the genre folders, so paths no longer need a `media/music/` prefix), the SMB browser
+resetting to the root every time it's reopened, and - raised mid-turn - wanting to play a whole
+folder instead of one file at a time, add to a queue, and get real repeat/shuffle.
+
+**`BridgeQueueLogic`** (`app/bridge/BridgeQueue.kt`) is the answer to all of the queueing asks at
+once: pure, unit-tested (12 tests) sequencing rules for the bridge's own client-side queue -
+`play_stream` starts exactly one stream with no real HEOS queue behind it, so next/previous/repeat/
+shuffle/add-to-queue all have to be reimplemented here rather than delegated to HEOS. Shuffle tracks
+which indices have played since the last exhaustion so a pass covers every track before repeating.
+`BridgeQueueController` is the thin side-effecting wrapper: starts a stream via `SmbBridgeService`
+and `HeosSession.heosClient.playStream`, and watches `player_state_changed` -> `stop` to advance
+automatically.
+
+**A real race found via the first test, not by inspection:** "PLAY ALL IN FOLDER" on a 6-track album
+immediately jumped to track 2 before track 1 had audibly started. Starting a *new* stream while an
+old one is still nominally playing makes the AVR-X4500H emit its own transitional `stop` for the
+outgoing stream moments later - confirmed on real hardware, not a theoretical race - and that stray
+event reached the controller's advance-on-stop listener and was misread as "track 1 already
+finished." Fixed with a 4-second guard on `stop` events measured from when the current track was
+started - long enough that no legitimately-finished track could be that short, short enough it never
+delays a real advance. Re-tested against a real 14-track deluxe-edition folder: correctly stayed on
+track 1 for its full length, then genuinely advanced to track 2 on its own.
+
+**A second real discovery changed how "is the bridge active" gets decided.** The original plan was
+"HEOS reports the generic `play_stream` label, so anything else means treat it as real HEOS
+playback" - reasonable-sounding, and wrong: the AVR-X4500H actually reads embedded tags out of a
+streamed file and reports the *real* title/artist/album once it's parsed them (confirmed live -
+`get_now_playing_media` returned "The Story of 'Graceland' (as told by Paul Simon)" / "Paul Simon —
+Graceland" mid-bridge-playback). `PlayerViewModel.isBridgeModeActive` now trusts the bridge queue's
+own state as ground truth instead (`bridgeQueue.currentItem != null`), and `BrowseViewModel`'s
+primary HEOS queue actions (`queue`/`playAllCurrentContainer`) call `bridgeQueueController.clear()`
+on success so choosing the primary path explicitly hands Now Playing/transport control back to real
+HEOS behaviour.
+
+**Verified end-to-end against the real AVR-X4500H and the real 14-track "Graceland 25th Anniversary
+Edition" folder** (volume set to 1 directly via `player/set_volume` beforehand): opened the folder,
+tapped "PLAY ALL IN FOLDER", watched track 1 play to completion and genuinely auto-advance to track
+2, and confirmed Now Playing showed "02. Graceland.flac" / "DEGRADED BRIDGE MODE" /
+"FLAC 24-bit/96.0 kHz Stereo" with live progress (`1:47 / 4:51`) - all three technical fields read
+from the real file header via `MediaInfoRepository`, not placeholders. The Queue tab correctly
+switched to showing the 14-item bridge queue (all bonus tracks included) with the current item
+highlighted, and its own repeat/shuffle/clear controls.
+
+**SMB browser now remembers its folder.** `SmbBrowseViewModel.open()` was unconditionally resetting
+to the root every time the collapsible panel was re-expanded - not a persistence gap, an outright
+bug (it recreated `SmbBrowseUiState` from scratch on every call regardless of whether the same
+credentials were already active). Fixed to no-op when the same credentials are already loaded, and
+added actual cross-restart persistence via a new `smbBrowsePath` DataStore field, restored on first
+open and written back after every successful `listDirectory` call (falling back to the root if a
+saved path no longer resolves, the same recovery the primary HEOS browse stack already uses).
+Verified across an app reinstall: reopening the browser landed directly back in
+`ROOT > FOLK > PAUL SIMON > GRACELAND 25TH ANN` with no extra taps.
+
+**The empty Browse tab now explains itself in-app**, not just in this doc: "NOTHING HERE." is
+followed by "No content indexed by HEOS yet - register a DLNA server or SMB network share in the
+HEOS app to browse normally here," so the connection to the DLNA-setup gap tracked above is visible
+without reading source.
+
 ## Continuing the branch
 
 Work continues on `claude/android-smb-denon-player-9710bx`. Phases 1-6 are all done and verified
