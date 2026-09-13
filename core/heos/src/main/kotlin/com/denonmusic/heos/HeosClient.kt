@@ -52,6 +52,15 @@ class HeosClient(private val connection: HeosConnection) {
             listOf("pid" to pid, "repeat" to repeat.wire, "shuffle" to if (shuffle) "on" else "off"),
         )
 
+    /** Current repeat/shuffle state, e.g. to paint the toggle chips correctly on screen entry. */
+    suspend fun getPlayMode(pid: String): PlayMode {
+        val attributes = connection.command("player", "get_play_mode", listOf("pid" to pid)).attributes
+        return PlayMode(
+            repeat = RepeatMode.fromWire(attributes["repeat"]),
+            shuffle = attributes["shuffle"]?.let { it == "on" },
+        )
+    }
+
     // -- queue -------------------------------------------------------------
 
     suspend fun getQueue(pid: String, start: Int = 0, end: Int = start + DEFAULT_PAGE_SIZE - 1): List<QueueItem> =
@@ -164,6 +173,8 @@ class HeosClient(private val connection: HeosConnection) {
         private const val MAX_PAGES: Int = 400
     }
 }
+
+data class PlayMode(val repeat: RepeatMode?, val shuffle: Boolean?)
 
 enum class RepeatMode(val wire: String) {
     All("on_all"),

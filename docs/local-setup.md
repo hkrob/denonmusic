@@ -162,11 +162,52 @@ Plex's DLNA server is also still off (nothing on port 32469). Until one of these
 stays empty and the primary HEOS-browse path has nothing to show - the bridge-mode field is a
 stopgap for testing, not a replacement.
 
+## Phase 3 done (2026-09-13): Now Playing + Queue, verified end-to-end
+
+`PlayerViewModel` (`app/.../player/PlayerViewModel.kt`) is now the single source of truth for "the
+currently selected HEOS player": it resolves the player id once, subscribes to the event socket
+once, and exposes now-playing/play-state/volume/repeat/shuffle/progress/queue as one `StateFlow`.
+It's hoisted at `MainScreen` (`app/.../nav/MainScreen.kt`), outside the nav graph, so Browse, Queue
+and Now Playing all observe the one instance instead of each independently resolving the player and
+re-subscribing - `BrowseViewModel` was trimmed back to browse-only concerns accordingly.
+
+Navigation: a top `TabRow` (Browse/Queue) plus a persistent mini-player bar; tapping the mini-player
+opens a full Now Playing screen (tap-to-expand, the usual mobile music-app convention) with
+transport, seek progress, repeat/shuffle chips and volume. Queue screen adds swipe-to-remove
+(`SwipeToDismissBox`), a long-press menu for play-now/move-up/move-down/remove, save-as-playlist,
+and clear.
+
+Added `HeosClient.getPlayMode` (`player/get_play_mode`) to paint the repeat/shuffle chips correctly
+on screen entry rather than only after the first `set_play_mode` call - the client had `set` but not
+`get` before this.
+
+**A real edge-to-edge inset bug found and fixed while verifying on the phone:** the top `TabRow`
+initially rendered with its labels completely hidden - `uiautomator dump` showed "BROWSE"/"QUEUE"
+existed in the tree with correct bounds, but visually the whole tab strip painted as solid green
+with invisible text. Cause: `MainActivity` calls `enableEdgeToEdge()`, so `MainScreen`'s bespoke
+`Column` (unlike `Scaffold`, which every individual screen uses and which pads for insets
+automatically) drew the `TabRow` directly under the physical status bar with no inset padding, and a
+custom `TabRowDefaults.SecondaryIndicator(Modifier, color = Winamp.Green)` passed without anchoring
+it to `tabPositions` rendered as a full-bleed fill rather than a thin line. Fixed by adding
+`Modifier.statusBarsPadding()`/`.navigationBarsPadding()` on `MainScreen`'s root `Column`, marking
+the status-bar inset consumed for the nav-host content below (`consumeWindowInsets`, so the nested
+per-screen `TopAppBar`s - which ask for the same inset by default - don't reserve it a second time
+and push their titles down further) and just dropping the custom indicator in favour of `TabRow`'s
+default. Confirmed fixed via `adb shell screencap` before and after.
+
+Verified against the real AVR-X4500H and phone: Browse/Queue tab switching, the mini-player
+(tap-to-expand into Now Playing and back), transport controls, live volume (reading 37 from the
+receiver), repeat/shuffle chips, and the Queue screen listing real queued items with working
+overflow menus - all using the bridge-mode queue populated during phase-2 testing, since `sid 1024`
+is still empty (DLNA/HEOS-share setup on Unraid remains pending, see above). Reorder
+(`moveQueueItem`) and save-as-playlist are implemented but not yet exercised against hardware -
+worth confirming once there's real queued content to reorder.
+
 ## Continuing the branch
 
-Work continues on `claude/android-smb-denon-player-9710bx`. Phase 2 (source auto-detection, the
-browse screen, browse memory, the four queue actions) is in place and verified end-to-end against
-the real receiver and phone, modulo the empty-library caveat above. Once a share is registered in
-HEOS, re-verify: opening a folder, all four `aid` actions, and that a force-stop/relaunch restores
-the same folder and scroll position. After that, phase 3 (Now Playing + Queue screens wired to the
-HEOS event stream) is next.
+Work continues on `claude/android-smb-denon-player-9710bx`. Phases 1-3 are done and verified
+end-to-end against the real receiver and phone, modulo the empty-library caveat above. Once a share
+is registered in HEOS, re-verify the full loop with real content: browse into a folder, all four
+`aid` actions, force-stop/relaunch restoring the same folder and scroll position, and queue reorder.
+Phase 4 (`:core:avr`: power/input, volume/mute via the AVR directly, sound modes, bit-perfect
+policy, the `CV?` OUTPUT map) is next.

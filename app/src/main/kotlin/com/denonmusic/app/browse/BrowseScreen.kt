@@ -9,10 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -20,7 +17,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -31,8 +27,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -51,11 +45,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.denonmusic.app.heos.HeosConnectionState
-import com.denonmusic.app.ui.EqualizerBars
 import com.denonmusic.app.ui.Winamp
 import com.denonmusic.app.ui.bevel
 import com.denonmusic.heos.BrowseItem
-import com.denonmusic.heos.PlayState
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -102,15 +94,6 @@ fun BrowseScreen(viewModel: BrowseViewModel = hiltViewModel()) {
                     }
                 },
             )
-        },
-        bottomBar = {
-            if (state.avrHost != null) {
-                NowPlayingBar(
-                    state = state,
-                    onTogglePlay = viewModel::togglePlayPause,
-                    onVolumeChange = viewModel::setVolume,
-                )
-            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
@@ -266,57 +249,6 @@ private fun BridgeModeTester(onPlay: (String) -> Unit) {
         )
         TextButton(onClick = { if (url.isNotBlank()) onPlay(url.trim()) }) {
             Text("PLAY STREAM", style = Winamp.labelStyle, color = Winamp.Amber)
-        }
-    }
-}
-
-@Composable
-private fun NowPlayingBar(state: BrowseUiState, onTogglePlay: () -> Unit, onVolumeChange: (Int) -> Unit) {
-    val np = state.nowPlaying
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Winamp.Panel)
-            .bevel(inset = true)
-            .padding(8.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onTogglePlay) {
-                Icon(
-                    if (state.playState == PlayState.Play) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = "Play/pause",
-                    tint = Winamp.Green,
-                )
-            }
-            Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                Text(
-                    text = np?.song?.takeIf { it.isNotBlank() } ?: "NO TRACK",
-                    style = Winamp.labelStyle,
-                    color = Winamp.Green,
-                )
-                val subtitle = listOfNotNull(np?.artist?.takeIf { it.isNotBlank() }, np?.album?.takeIf { it.isNotBlank() })
-                    .joinToString(" — ")
-                Text(subtitle.ifEmpty { "—" }, style = Winamp.smallStyle)
-            }
-            EqualizerBars(
-                levels = listOf(0.3f, 0.7f, 0.5f, 0.9f, 0.4f, 0.6f, 0.2f, 0.8f),
-                modifier = Modifier.width(60.dp).height(28.dp),
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("VOL", style = Winamp.smallStyle, modifier = Modifier.width(32.dp))
-            Slider(
-                value = (state.volume ?: 0).toFloat(),
-                onValueChange = { onVolumeChange(it.toInt()) },
-                valueRange = 0f..100f,
-                colors = SliderDefaults.colors(
-                    thumbColor = Winamp.Green,
-                    activeTrackColor = Winamp.Green,
-                    inactiveTrackColor = Winamp.BevelLight,
-                ),
-                modifier = Modifier.weight(1f),
-            )
-            Text("${state.volume ?: 0}", style = Winamp.smallStyle, modifier = Modifier.width(28.dp))
         }
     }
 }

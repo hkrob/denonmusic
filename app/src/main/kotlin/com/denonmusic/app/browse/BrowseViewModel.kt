@@ -8,8 +8,6 @@ import com.denonmusic.data.browse.BrowseStackEntity
 import com.denonmusic.data.settings.SettingsRepository
 import com.denonmusic.heos.AddCriteria
 import com.denonmusic.heos.BrowseItem
-import com.denonmusic.heos.NowPlaying
-import com.denonmusic.heos.PlayState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -28,9 +26,6 @@ data class BrowseUiState(
     val isLoading: Boolean = false,
     val message: String? = null,
     val avrHost: String? = null,
-    val nowPlaying: NowPlaying? = null,
-    val playState: PlayState? = null,
-    val volume: Int? = null,
 )
 
 /** One long-press menu offering, mapping 1:1 onto the wire `aid` values. */
@@ -82,13 +77,9 @@ class BrowseViewModel @Inject constructor(
         }
     }
 
-    private var eventsJob: Job? = null
-
     private suspend fun bootstrap() {
         val client = session.heosClient ?: return
         runCatching { client.getPlayers() }.getOrNull()?.firstOrNull()?.let { pid = it.pid }
-        pid?.let { refreshPlayerState(it) }
-        subscribeToPlayerEvents()
 
         val existingStack = browseRepository.currentStack()
         if (existingStack.isEmpty()) {
@@ -201,39 +192,6 @@ class BrowseViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(message = null)
     }
 
-    private suspend fun refreshPlayerState(playerId: String) {
-        val client = session.heosClient ?: return
-        val nowPlaying = runCatching { client.getNowPlaying(playerId) }.getOrNull()
-        val playState = runCatching { client.getPlayState(playerId) }.getOrNull()
-        val volume = runCatching { client.getVolume(playerId) }.getOrNull()
-        _uiState.value = _uiState.value.copy(nowPlaying = nowPlaying, playState = playState, volume = volume)
-    }
-
-    /** Drives the now-playing bar from the event socket instead of polling. */
-    private fun subscribeToPlayerEvents() {
-        eventsJob?.cancel()
-        val events = session.events ?: return
-        eventsJob = viewModelScope.launch {
-            events.collect { frame ->
-                val playerId = pid ?: return@collect
-                when (frame.eventName) {
-                    "player_now_playing_changed", "player_state_changed", "player_volume_changed" ->
-                        refreshPlayerState(playerId)
-                }
-            }
-        }
-    }
-
-    fun togglePlayPause() {
-        val client = session.heosClient ?: return
-        val playerId = pid ?: return
-        val next = if (_uiState.value.playState == PlayState.Play) PlayState.Pause else PlayState.Play
-        viewModelScope.launch {
-            runCatching { client.setPlayState(playerId, next) }
-                .onSuccess { _uiState.value = _uiState.value.copy(playState = next) }
-        }
-    }
-
     /**
      * Bridge fallback ([AddCriteria] doesn't apply - this is `browse/play_stream`, not a queue
      * entry): starts exactly one stream, no next-track, no real queue. Kept out of the primary
@@ -247,15 +205,6 @@ class BrowseViewModel @Inject constructor(
             runCatching { client.playStream(playerId, url) }
                 .onFailure { e -> _uiState.value = _uiState.value.copy(message = e.message ?: "Stream failed") }
                 .onSuccess { _uiState.value = _uiState.value.copy(message = "Streaming (degraded bridge mode)") }
-        }
-    }
-
-    fun setVolume(level: Int) {
-        val client = session.heosClient ?: return
-        val playerId = pid ?: return
-        viewModelScope.launch {
-            runCatching { client.setVolume(playerId, level) }
-                .onSuccess { _uiState.value = _uiState.value.copy(volume = level) }
         }
     }
 }

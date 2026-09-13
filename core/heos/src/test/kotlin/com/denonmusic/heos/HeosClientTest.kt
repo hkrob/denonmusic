@@ -164,6 +164,17 @@ class HeosClientTest {
     }
 
     @Test
+    fun `get play mode decodes repeat and shuffle`() = runBlocking {
+        server.onSuccess("player/get_play_mode", message = "pid=1&repeat=on_all&shuffle=on")
+        connection.connect()
+
+        val mode = client.getPlayMode("1")
+
+        assertEquals(RepeatMode.All, mode.repeat)
+        assertEquals(true, mode.shuffle)
+    }
+
+    @Test
     fun `a failed command raises an exception carrying the error id`() = runBlocking {
         server.on("browse/browse") { line ->
             listOf(
