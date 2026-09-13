@@ -254,15 +254,67 @@ it was actively playing audio in the room at the time - avoid flipping `PWSTANDB
 modes on a live listening session without warning whoever's in the room.
 
 **Known gap:** SMB credentials in `SettingsScreen` are stored in plain DataStore, not the plan's
-EncryptedSharedPreferences. Deliberately deferred - `androidx.security-crypto` plus Keystore wiring
-is its own chunk of work, and there's nothing sensitive stored yet (no SMB share has actually been
-exercised - see `:core:smb` below). Do this before shipping.
+EncryptedSharedPreferences. Deliberately deferred at the time it was written - `androidx.security-crypto`
+plus Keystore wiring is its own chunk of work. Now that Phase 5 has real credentials that do get typed
+into this screen (see below), treat this as higher priority than "before shipping" - do it next.
+
+## Phase 5 done (2026-09-13): `:core:smb`, verified end-to-end against real files
+
+`:core:smb` is a new pure-JVM module (jcifs-ng has no Android dependency, same rationale as
+`:core:heos`/`:core:avr`): stream-based header parsers for every format the plan lists (FLAC
+`STREAMINFO`, MP3 frame header + Xing/Info VBR detection, DSF header, DFF `FRM8`/`PROP`/`FS` chunks),
+artwork extraction (FLAC `PICTURE` block, ID3v2.3/2.4 `APIC` frame), and `SmbOverlay` - the read-only
+jcifs-ng wrapper that stats a file, parses its header (capped at 64 KB per file per the plan), and
+finds folder-level `folder.jpg`/`cover.jpg` art. 41 unit tests, all against hand-built byte fixtures
+(`TestFixtures.kt`) rather than binary files committed to the repo - the parsers only ever look at a
+handful of header bytes, so a real encoder's output adds nothing but binary noise for the same
+coverage.
+
+Wired into `:core:data` (`MediaInfoCacheEntity`/`Dao`, keyed by path+mtime+size exactly as the plan
+specifies - any of the three changing is a cache miss by construction, no separate invalidation path
+to keep in sync) and into the app (`MediaInfoRepository` bridges the two; `ChainIntegrity` is the pure
+comparison function the plan calls the payoff for this whole module - file-side truth vs. AVR-side
+`SSINF*` truth, flagging a DSD-arrives-as-PCM transcode or a resampled sample rate; 7 unit tests). A
+debug-only "SMB PARSE TEST" panel was added to `SettingsScreen`, mirroring the Browse screen's
+degraded-bridge tester, specifically so this could be exercised against a real share without a full
+technical-panel UI (Now Playing's technical panel + chain-integrity indicator - the UI consumer of
+all this - is not yet built; this phase is the data layer under it).
+
+**Verified end-to-end against the real unraid share (2026-09-13).** The plan's own SMB path had never
+touched a real server before this - jcifs-ng's network behaviour, not just the parsers, was unverified.
+Two real snags surfaced getting there, both about *authentication*, not about this project's code:
+- The user shares `music` and `arr` are both browsable with no credentials at all from a Windows
+  session (unraid allows guest/anonymous read) - which is a red herring for what jcifs-ng needs, since
+  it authenticates explicitly rather than falling back to guest the way Explorer does.
+  A first credential guess (`shares`/`shares`) failed both `net use` from Windows and jcifs-ng with
+  the same `SmbAuthException: Logon failure: unknown user name or bad password` - confirming it was a
+  genuinely bad credential, not a project bug.
+- The correct SMB path is `\\10.1.10.10\arr\media\music\...` (share `arr`, not `music`) with a
+  dedicated `denon`/`denon` account - once entered, `SmbOverlay` correctly stat'd, parsed, and pulled
+  art for real files: a 24-bit/44.1kHz FLAC (Sinatra) and a DSD128 `.dsf` (Bill Evans, `5,644,800 Hz`,
+  1-bit, stereo - matches the plan's DSD128 rate exactly). Verified via a throwaway JVM test exercising
+  `SmbOverlay` directly (not committed - see the module's tests for the fixture-based coverage that
+  *is* kept).
+
+**Do this in the app once, by hand:** open Settings -> SMB SHARE and enter host `10.1.10.10`, share
+`arr`, username `denon`, password `denon`, then Save. (Not pre-filled or hardcoded anywhere in the
+repo - credentials belong in the running app's DataStore, not in source control. Attempting to
+automate this fill via `adb shell input text` hit repeated IME-reflow coordinate issues switching
+between fields - not worth fighting further since the underlying `SmbOverlay`/jcifs-ng path is already
+proven via the direct JVM test above; the Settings screen itself reuses the same `OutlinedTextField`
+pattern already proven working in the Browse screen's AVR-host entry.)
 
 ## Continuing the branch
 
-Work continues on `claude/android-smb-denon-player-9710bx`. Phases 1-4 are done and verified
-end-to-end against the real receiver and phone, modulo the empty-library caveat above. Once a share
-is registered in HEOS, re-verify the full loop with real content: browse into a folder, all four
-`aid` actions, force-stop/relaunch restoring the same folder and scroll position, and queue reorder.
-Phase 5 (`:core:smb`: header parsers, technical panel, chain integrity, artwork, format badges) is
-next.
+Work continues on `claude/android-smb-denon-player-9710bx`. Phases 1-5 are done. Phases 1-4 are
+verified end-to-end against the real receiver and phone; Phase 5's parsers and jcifs-ng path are
+verified against real files on the real unraid share (see above), though the Settings-screen
+credential entry itself hasn't been click-tested end-to-end in the running app (see above).  Once a
+share is registered in HEOS itself (still pending - see the DLNA section above), re-verify the full
+browse loop with real content: browse into a folder, all four `aid` actions, force-stop/relaunch
+restoring the same folder and scroll position, and queue reorder.
+
+Next up: EncryptedSharedPreferences for the now-real SMB credentials (see the known gap above), then
+the Now Playing technical panel + chain-integrity indicator UI that consumes `:core:smb`/`ChainIntegrity`,
+folder-level format badges in Browse, and Phase 6 (bridge-mode fallback polish - the degraded
+`play_stream` path already exists from earlier testing but was never meant to be the primary path).

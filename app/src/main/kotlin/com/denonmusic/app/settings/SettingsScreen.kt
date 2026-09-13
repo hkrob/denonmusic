@@ -88,7 +88,30 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }) {
                 Text("SAVE SMB CREDENTIALS", style = Winamp.labelStyle, color = Winamp.Amber)
             }
+
+            SmbTester(viewModel)
         }
+    }
+}
+
+/**
+ * Debug-only affordance for exercising the real SMB network path end to end against a saved
+ * host/share - the header parsers are unit-tested against fixtures, but jcifs-ng's own network
+ * behaviour has never touched a real share (see docs/local-setup.md). Same "opt-in, clearly
+ * labelled" spirit as the Browse screen's degraded-bridge tester.
+ */
+@Composable
+private fun SmbTester(viewModel: SettingsViewModel) {
+    var path by remember { mutableStateOf("") }
+    val result by viewModel.smbTestResult.collectAsState()
+
+    Column(modifier = Modifier.padding(top = 24.dp)) {
+        SectionLabel("SMB PARSE TEST (debug)")
+        LabeledField("File path within share, e.g. Artist/Album/track.flac", path, { path = it })
+        TextButton(onClick = { if (path.isNotBlank()) viewModel.testSmbPath(path.trim()) }) {
+            Text("PARSE", style = Winamp.labelStyle, color = Winamp.Amber)
+        }
+        result?.let { Text(it, style = Winamp.smallStyle, color = Winamp.Green) }
     }
 }
 

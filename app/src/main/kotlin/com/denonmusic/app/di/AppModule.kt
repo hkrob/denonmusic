@@ -9,6 +9,7 @@ import androidx.room.Room
 import com.denonmusic.data.AppDatabase
 import com.denonmusic.data.browse.BrowseCacheDao
 import com.denonmusic.data.browse.BrowseStackDao
+import com.denonmusic.data.media.MediaInfoCacheDao
 import com.denonmusic.data.settings.SettingsRepository
 import dagger.Module
 import dagger.Provides
@@ -36,11 +37,18 @@ object AppModule {
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
-        Room.databaseBuilder(context, AppDatabase::class.java, AppDatabase.NAME).build()
+        Room.databaseBuilder(context, AppDatabase::class.java, AppDatabase.NAME)
+            // Pre-release: no installed schema is worth preserving yet, and every cache table here
+            // repopulates itself from the network/filesystem on a miss.
+            .fallbackToDestructiveMigration()
+            .build()
 
     @Provides
     fun provideBrowseStackDao(db: AppDatabase): BrowseStackDao = db.browseStackDao()
 
     @Provides
     fun provideBrowseCacheDao(db: AppDatabase): BrowseCacheDao = db.browseCacheDao()
+
+    @Provides
+    fun provideMediaInfoCacheDao(db: AppDatabase): MediaInfoCacheDao = db.mediaInfoCacheDao()
 }

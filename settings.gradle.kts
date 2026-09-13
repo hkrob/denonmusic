@@ -21,6 +21,7 @@ rootProject.name = "denonmusic"
 // and dev boxes without an Android SDK installed.
 include(":core:heos")
 include(":core:avr")
+include(":core:smb")
 
 // Android modules need an SDK. Including them unconditionally makes `./gradlew
 // :core:heos:test` fail at configuration time on a machine without one, which would
@@ -32,7 +33,6 @@ val hasAndroidSdk =
 
 if (hasAndroidSdk) {
     include(":app")
-    include(":core:smb")
     include(":core:data")
     // include(":feature:probe")
 } else {
