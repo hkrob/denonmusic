@@ -567,3 +567,32 @@ Three things found chasing user reports against real hardware again after the ab
   Also added a sample-rate-only Hi-Res proxy for this same native path (PCM >=48kHz, or any DSD) -
   the AVR's telnet port has no bit-depth command for a network-sourced signal, so this is a weaker
   signal than the real, header-derived `AudioFormatInfo.isHiRes` the bridge path gets.
+
+## Now Playing losing sync, and album art
+
+Two more real-hardware-driven fixes:
+
+- **"Now Playing loses sync" traced to `HeosSession`'s event socket silently dying.** The session
+  keeps two sockets (one for commands, one registered for change events per the spec), but the
+  25-second heartbeat loop only ever watched `commands.isConnected` - a closed local socket object,
+  which says nothing about whether the far end is still actually delivering anything on the *other*
+  socket. A router NAT timeout or WiFi blip that only clips the event connection left it looking
+  "connected" forever while `player_state_changed`/`_progress` events just stopped arriving - the UI
+  freezes on whatever it last knew while the receiver keeps moving. Fixed by sending `heart_beat` on
+  *both* sockets every cycle, so a dead event connection surfaces as a real timeout/IOException and
+  sends the session into its existing reconnect-with-backoff path instead of staying silently stuck.
+  Added a second, independent safety net too: `PlayerViewModel` now polls a full `refreshAll`/
+  `refreshQueue` every 15s regardless of events, since even a healthy socket can miss the odd event,
+  or a third party (the receiver's own remote, another HEOS app) can change state without firing one
+  this app happens to be listening for.
+- **Album art**, requested for both playback paths. Native/DLNA already had `NowPlaying.imageUrl`
+  from HEOS itself - just needed rendering. Bridge mode had no image source at all: added
+  `SmbOverlay.findArtwork` (folder `folder.jpg`/`cover.jpg` first, per the plan's own preference,
+  falling back to an embedded FLAC/MP3 tag picture via the already-existing but previously
+  never-wired-up `ArtworkExtractor`) and `SmbBridgeService.artworkFor`, fetched alongside format
+  info in `BridgeQueueController.playCurrent`. Added `RemoteArtwork`/`LocalArtwork` - two small
+  hand-rolled Compose loaders (a plain `HttpURLConnection` fetch + `BitmapFactory`, an in-memory
+  cache for the URL one) rather than pulling in an image-loading library for the one place this app
+  needs one. Verified on real hardware: both a native Plex-DLNA track and a bridge-mode Atmos `.m4a`
+  (folder art, since `ArtworkExtractor` has no MP4/M4A embedded-picture support) showed real cover
+  art on the Now Playing screen.

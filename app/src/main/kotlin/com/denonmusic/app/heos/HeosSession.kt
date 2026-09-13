@@ -82,8 +82,8 @@ class HeosSession @Inject constructor() {
                 attempt = 0
                 _state.value = HeosConnectionState.Connected(host)
 
-                heartbeatLoop(commands)
-                // heartbeatLoop only returns when the connection has failed.
+                heartbeatLoop(commands, events)
+                // heartbeatLoop only returns when a connection has failed.
             } catch (t: Throwable) {
                 _state.value = HeosConnectionState.Failed(host, t.message ?: t.toString())
             } finally {
@@ -101,11 +101,25 @@ class HeosSession @Inject constructor() {
         }
     }
 
-    private suspend fun heartbeatLoop(commands: HeosConnection) {
-        while (commands.isConnected) {
+    /**
+     * Watches both sockets, not just the command one - "Now Playing loses sync" was traced to the
+     * event connection silently dying (a router NAT timeout, a WiFi blip that only clips one of the
+     * two sockets) while `commands.isConnected` stayed true, since a closed local socket object says
+     * nothing about whether the far end is still actually delivering anything. Once that happens,
+     * `player_state_changed`/`_progress` events just stop arriving forever with no error anywhere -
+     * the UI freezes on whatever it last knew, while the receiver itself keeps moving.
+     *
+     * `heart_beat` doubles as a liveness probe here: sending it and awaiting the reply on the *event*
+     * connection (not just the command one) forces a real round trip on that exact socket, so a dead
+     * one surfaces as a timeout/IOException instead of staying invisible. A failure here ends the
+     * loop, which sends [runSession] into its existing reconnect-with-backoff path for both sockets.
+     */
+    private suspend fun heartbeatLoop(commands: HeosConnection, events: HeosConnection) {
+        while (commands.isConnected && events.isConnected) {
             delay(HEARTBEAT_INTERVAL_MS)
-            if (!commands.isConnected) break
+            if (!commands.isConnected || !events.isConnected) break
             runCatching { commands.command("system", "heart_beat") }.onFailure { return }
+            runCatching { events.command("system", "heart_beat") }.onFailure { return }
         }
     }
 

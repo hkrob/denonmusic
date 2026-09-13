@@ -15,6 +15,8 @@ data class BridgeQueueState(
     val playedShuffleIndices: Set<Int> = emptySet(),
     /** Populated asynchronously once [currentIndex]'s header has been read; null while pending. */
     val currentFormatInfo: AudioFormatInfo? = null,
+    /** Populated asynchronously alongside [currentFormatInfo]; null while pending or if none found. */
+    val currentArtwork: ByteArray? = null,
 ) {
     val currentItem: BridgeQueueItem? get() = items.getOrNull(currentIndex)
 }

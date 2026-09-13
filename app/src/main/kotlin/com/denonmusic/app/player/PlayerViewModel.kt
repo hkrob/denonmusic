@@ -17,11 +17,13 @@ import com.denonmusic.heos.RepeatMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 data class Progress(val positionMillis: Long, val durationMillis: Long)
@@ -90,6 +92,7 @@ class PlayerViewModel @Inject constructor(
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
     private var eventsJob: Job? = null
+    private var resyncJob: Job? = null
     private var lastPlayState: PlayState? = null
 
     init {
@@ -99,6 +102,7 @@ class PlayerViewModel @Inject constructor(
                     bootstrap()
                 } else {
                     eventsJob?.cancel()
+                    resyncJob?.cancel()
                     _uiState.value = PlayerUiState()
                 }
             }
@@ -121,6 +125,25 @@ class PlayerViewModel @Inject constructor(
         refreshAll(player.pid)
         refreshQueue(player.pid)
         subscribeEvents(player.pid)
+        startPeriodicResync(player.pid)
+    }
+
+    /**
+     * A poll-based safety net on top of [subscribeEvents]'s event-driven updates - independent of
+     * [HeosSession]'s own now-heartbeated event socket, since even a healthy connection can miss the
+     * odd event, and a third party (the receiver's own remote, another HEOS app) changing state
+     * doesn't necessarily fire an event this app happens to be listening for. Never lets the UI drift
+     * further than this interval from ground truth, whatever the cause.
+     */
+    private fun startPeriodicResync(pid: String) {
+        resyncJob?.cancel()
+        resyncJob = viewModelScope.launch {
+            while (isActive) {
+                delay(RESYNC_INTERVAL_MS)
+                refreshAll(pid)
+                refreshQueue(pid)
+            }
+        }
     }
 
     private suspend fun refreshAll(pid: String) {
@@ -342,4 +365,8 @@ class PlayerViewModel @Inject constructor(
     fun removeBridgeQueueItem(index: Int) = bridgeQueueController.removeAt(index)
 
     fun clearBridgeQueue() = bridgeQueueController.clear()
+
+    private companion object {
+        const val RESYNC_INTERVAL_MS = 15_000L
+    }
 }

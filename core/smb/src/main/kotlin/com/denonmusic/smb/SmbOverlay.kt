@@ -63,6 +63,26 @@ class SmbOverlay(private val credentials: SmbCredentials) {
     }
 
     /**
+     * Album art for [path]: folder art next to it if present (the plan's preferred source - one
+     * directory listing covers art for every track in the folder, see [findFolderArtwork]), else an
+     * embedded picture read straight out of the file's own tags. FLAC and MP3 only -
+     * [ArtworkExtractor] has no MP4/M4A support, so an Atmos rip falls back to folder art or nothing.
+     */
+    fun findArtwork(path: String): ByteArray? {
+        findFolderArtwork(path.substringBeforeLast('/', ""))?.let { return it }
+        val file = SmbFile(smbUrl(path), context)
+        return runCatching {
+            file.inputStream.use { stream ->
+                when (path.substringAfterLast('.', "").lowercase()) {
+                    "flac" -> ArtworkExtractor.extractFlacPicture(stream)
+                    "mp3" -> ArtworkExtractor.extractId3Apic(stream)
+                    else -> null
+                }
+            }
+        }.getOrNull()
+    }
+
+    /**
      * Lists [directoryPath] (empty string for the share root): subfolders first, then files whose
      * extension one of the plan's format parsers actually recognises, both alphabetical. Filters out
      * anything else (`.nfo`, artwork, playlists, ...) since this listing exists to pick something to

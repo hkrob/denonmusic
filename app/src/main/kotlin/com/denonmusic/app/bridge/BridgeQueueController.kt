@@ -73,7 +73,7 @@ class BridgeQueueController @Inject constructor(
 
     fun playAt(index: Int) {
         if (index !in _state.value.items.indices) return
-        _state.value = _state.value.copy(currentIndex = index, currentFormatInfo = null)
+        _state.value = _state.value.copy(currentIndex = index, currentFormatInfo = null, currentArtwork = null)
         playCurrent()
     }
 
@@ -100,7 +100,7 @@ class BridgeQueueController @Inject constructor(
 
     private fun stepAndPlay(compute: (BridgeQueueState) -> BridgeQueueState?) {
         val result = compute(_state.value) ?: return
-        _state.value = result.copy(currentFormatInfo = null)
+        _state.value = result.copy(currentFormatInfo = null, currentArtwork = null)
         playCurrent()
     }
 
@@ -141,9 +141,10 @@ class BridgeQueueController @Inject constructor(
             runCatching { heosSession.heosClient?.playStream(playerId, url) }
 
             val formatInfo = runCatching { smbBridgeService.formatInfoFor(item.path) }.getOrNull()
+            val artwork = runCatching { smbBridgeService.artworkFor(item.path) }.getOrNull()
             // A fast next()/previous() may have moved on while this lookup was in flight.
             if (_state.value.currentItem == item) {
-                _state.value = _state.value.copy(currentFormatInfo = formatInfo)
+                _state.value = _state.value.copy(currentFormatInfo = formatInfo, currentArtwork = artwork)
             }
         }
     }

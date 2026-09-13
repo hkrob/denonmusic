@@ -55,6 +55,12 @@ class SmbBridgeService @Inject constructor(
         return mediaInfoRepository.getFormatInfo(overlay, path)
     }
 
+    /** Album art for the Now Playing display - folder art or an embedded tag picture, see [SmbOverlay.findArtwork]. */
+    suspend fun artworkFor(path: String): ByteArray? {
+        val overlay = currentOverlay() ?: return null
+        return withContext(Dispatchers.IO) { runCatching { overlay.findArtwork(path) }.getOrNull() }
+    }
+
     private suspend fun currentOverlay(): SmbOverlay? {
         val saved = settings.settings.first()
         val host = saved.smbHost?.takeIf { it.isNotBlank() } ?: return null

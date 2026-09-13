@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
@@ -41,6 +42,8 @@ import com.denonmusic.app.player.PlayerViewModel
 import com.denonmusic.app.player.TechnicalInfo
 import com.denonmusic.app.player.icon
 import com.denonmusic.app.player.next
+import com.denonmusic.app.ui.LocalArtwork
+import com.denonmusic.app.ui.RemoteArtwork
 import com.denonmusic.app.ui.Winamp
 import com.denonmusic.app.ui.bevel
 import com.denonmusic.avr.SignalType
@@ -82,6 +85,13 @@ fun NowPlayingScreen(playerViewModel: PlayerViewModel, onBack: () -> Unit) {
         ) {
             if (state.isBridgeModeActive) {
                 val item = state.bridgeQueue.currentItem
+                Box(modifier = Modifier.size(220.dp).bevel().padding(bottom = 16.dp)) {
+                    LocalArtwork(
+                        bytes = state.bridgeQueue.currentArtwork,
+                        contentDescription = "Album art",
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
                 Text(item?.displayName ?: "NO TRACK", style = Winamp.titleStyle, color = Winamp.Green)
                 Text(
                     "SMB MODE - PROXIED VIA ANDROID APP",
@@ -96,6 +106,13 @@ fun NowPlayingScreen(playerViewModel: PlayerViewModel, onBack: () -> Unit) {
                 )
             } else {
                 val np = state.nowPlaying
+                Box(modifier = Modifier.size(220.dp).bevel().padding(bottom = 16.dp)) {
+                    RemoteArtwork(
+                        url = np?.imageUrl,
+                        contentDescription = "Album art",
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
                 Text(
                     np?.song?.takeIf { it.isNotBlank() } ?: "NO TRACK",
                     style = Winamp.titleStyle,
