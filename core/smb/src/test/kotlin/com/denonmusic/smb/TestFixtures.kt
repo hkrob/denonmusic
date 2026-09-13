@@ -140,6 +140,60 @@ object TestFixtures {
         return out.toByteArray()
     }
 
+    /**
+     * A minimal but structurally real ISO-BMFF box tree: `ftyp`, then `moov > trak > mdia > minf >
+     * stbl > stsd` holding one sample entry for [fourcc] ("mp4a", "alac", "ec-3", ...). [alacBitDepth]
+     * appends an ALACSpecificConfig child box when [fourcc] is "alac", matching what a real encoder
+     * writes there.
+     */
+    fun mp4(fourcc: String, sampleRate: Int, channels: Int, alacBitDepth: Int? = null): ByteArray {
+        fun box(type: String, body: ByteArray): ByteArray {
+            val out = ByteArrayOutputStream()
+            out.write(beIntBytes(8 + body.size))
+            out.write(type.toByteArray(Charsets.US_ASCII))
+            out.write(body)
+            return out.toByteArray()
+        }
+
+        // The 16.16 fixed-point field can only hold a 16-bit integer part - a real muxer clamps to
+        // 65535 rather than overflow it for a >65535Hz stream, same as reproduced here.
+        val sampleRateFixed = (sampleRate.coerceAtMost(65_535).toLong() shl 16)
+        val audioFields = ByteArray(6) // reserved
+            .plus(byteArrayOf(0, 1)) // data_reference_index = 1
+            .plus(ByteArray(8)) // reserved
+            .plus(beShortBytes(channels))
+            .plus(beShortBytes(16)) // samplesize
+            .plus(byteArrayOf(0, 0)) // pre_defined
+            .plus(byteArrayOf(0, 0)) // reserved
+            .plus(beIntBytes(sampleRateFixed.toInt()))
+
+        val childConfig = if (fourcc == "alac" && alacBitDepth != null) {
+            // ALACSpecificConfig (24 bytes): frameLength(4), compatibleVersion(1), bitDepth(1),
+            // pb(1), mb(1), kb(1), numChannels(1), maxRun(2), maxFrameBytes(4), avgBitRate(4),
+            // sampleRate(4) - the real, unbounded sample rate this format actually needs.
+            val config = beIntBytes(4096) +
+                byteArrayOf(0, alacBitDepth.toByte(), 40, 10, 14, channels.toByte()) +
+                beShortBytes(255) +
+                beIntBytes(0) +
+                beIntBytes(0) +
+                beIntBytes(sampleRate)
+            box("alac", config)
+        } else {
+            ByteArray(0)
+        }
+        val sampleEntry = box(fourcc, audioFields + childConfig)
+
+        val stsdBody = beIntBytes(0) /* version/flags */ + beIntBytes(1) /* entry_count */ + sampleEntry
+        val stsd = box("stsd", stsdBody)
+        val stbl = box("stbl", stsd)
+        val minf = box("minf", stbl)
+        val mdia = box("mdia", minf)
+        val trak = box("trak", mdia)
+        val moov = box("moov", trak)
+        val ftyp = box("ftyp", "M4A mp42isom".toByteArray(Charsets.US_ASCII))
+        return ftyp + moov
+    }
+
     private fun beBytes(value: Long): ByteArray = ByteArray(8) { i -> (value ushr ((7 - i) * 8)).toByte() }
     private fun beIntBytes(value: Int): ByteArray = byteArrayOf(
         (value ushr 24).toByte(), (value ushr 16).toByte(), (value ushr 8).toByte(), value.toByte(),

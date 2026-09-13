@@ -502,3 +502,37 @@ Verified against real hardware end-to-end after the fix: BROWSE > LOCAL MUSIC > 
 Sugar > Music > Music > All Artists > Adele > 21 > Rolling in the Deep, queued and playing through real
 HEOS (`qid=1`, `get_play_state` returned `state=play`), Now Playing showing the real title/artist/album
 - not bridge mode, no `play_stream` involved. Tested at volume 8.
+
+## Atmos/M4A/MP4 support, file-type + hi-res indication, and a real bit-perfect bug
+
+Added `Mp4HeaderParser`: a minimal ISO-BMFF (`moov > trak > mdia > minf > stbl > stsd`) box walker for
+`.m4a`/`.mp4`, since the bridge had no parser for either before this - `isSupportedAudioFile` didn't
+even list them. Reports the real codec inside the wrapper (`AAC`, `ALAC`, or the object-audio codecs
+Atmos rips are muxed as, `E-AC-3 (Atmos)`/`AC-4 (Atmos)`), not just "MP4". ALAC needs its own
+`ALACSpecificConfig` child box for the real sample rate: the generic 16.16 fixed-point field elsewhere
+in the sample entry can only hold a 16-bit integer part, so it cannot represent anything above 65535Hz
+at all - every 96/192kHz hi-res ALAC file would otherwise silently misreport its own sample rate.
+`AudioFormatInfo` gained `codecLabel`, `isLossy`, `isAtmos` and `isHiRes` (JAS's own definition:
+lossless PCM at 24-bit/48kHz+, or DSD at any rate - a lossy codec, Atmos included, is never Hi-Res
+regardless of its nominal sample rate). `SmbOverlay`'s header-read budget went from 64KB to 512KB to
+give the MP4 walk more room to reach `moov` on a file with a larger-than-usual one.
+
+Verified against the user's real Atmos rips at `\\10.1.10.10\music\Atmos\Prince\2026 Timeless Atmos`
+(`.m4a` and `.mp4` siblings of the same tracks): browsed, played, and the Now Playing technical line
+correctly read `MP4 (E-AC-3 (Atmos)) 16-bit/48.0 kHz Stereo • ATMOS` for a real file, confirming actual
+audible playback through the bridge. Genuine object-based Atmos rendering isn't achievable this way -
+that needs HDMI bitstream passthrough to the AVR's own decoder, not a network audio stream - so this
+is "plays the Atmos rip" (E-AC-3 decoded to stereo/whatever channel count HEOS negotiates), not
+"renders Atmos objects." Worth being explicit about that distinction if it comes up again.
+
+File-type badges (extension only, no per-row header read - cheap) now show next to every file in the
+SMB browser; the fuller picture (codec, bit depth, Hi-Res/Atmos badges) only gets read once a track is
+actually played, on the Now Playing screen's technical line, same as `AudioFormatInfo` always worked.
+
+Also found and fixed a real bug while wiring the AVR-technical-info Now Playing panel added earlier:
+choosing "AutoDirect"/"AutoPureDirect" under Bit-Perfect Policy on the AVR screen only ever persisted
+the setting - `AvrViewModel.setBitPerfectPolicy` never actually called `AvrClient.applyBitPerfectPolicy`,
+so nothing happened until whatever track was already queued happened to restart (the only place that
+was actually wired, in `PlayerViewModel`'s queue-start edge). Fixed by applying it immediately too.
+Verified on real hardware: selecting AutoPureDirect while a track was already playing changed `MS?`
+from `MSSTEREO` to `MSPURE DIRECT` right away, no track restart needed.

@@ -243,9 +243,14 @@ private fun TechnicalInfo.summary(): String? {
     }
 }
 
-/** e.g. "FLAC 24-bit/192.0 kHz Stereo" or "DSF 2.8 MHz Stereo" for the bridge mode technical line. */
+/**
+ * e.g. "FLAC 24-bit/192.0 kHz Stereo • HI-RES" or "MP4 (E-AC-3 (Atmos)) 48.0 kHz Stereo • ATMOS" for
+ * the bridge mode technical line. [codecLabel] carries the real codec for an MP4/M4A wrapper, since
+ * the container name alone ("MP4") says nothing about what's actually encoded inside it.
+ */
 private fun AudioFormatInfo.summary(): String = buildString {
     append(container.name.uppercase())
+    codecLabel?.let { append(" ($it)") }
     append(' ')
     if (isDsd) {
         append("%.1f MHz".format(Locale.US, sampleRateHz / 1_000_000.0))
@@ -256,4 +261,6 @@ private fun AudioFormatInfo.summary(): String = buildString {
     append(' ')
     append(if (channels <= 2) if (channels == 1) "Mono" else "Stereo" else "${channels}ch")
     bitrateKbps?.let { append(" • $it kbps") }
+    if (isAtmos) append(" • ATMOS")
+    if (isHiRes) append(" • HI-RES")
 }

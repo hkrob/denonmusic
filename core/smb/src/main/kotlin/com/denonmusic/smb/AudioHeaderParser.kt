@@ -11,6 +11,7 @@ object AudioHeaderParser {
             "mp3" -> Mp3HeaderParser.parse(input)
             "dsf" -> DsfHeaderParser.parse(input)
             "dff" -> DffHeaderParser.parse(input)
+            "m4a", "mp4" -> Mp4HeaderParser.parse(input)
             else -> null
         }
 }

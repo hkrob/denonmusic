@@ -453,6 +453,17 @@ private fun SmbEntryRow(entry: SmbEntry, onOpen: () -> Unit, onPlayFromHere: () 
                 modifier = Modifier.size(20.dp),
             )
             Text(entry.name, style = Winamp.smallStyle, color = Winamp.Green, modifier = Modifier.padding(start = 10.dp))
+            if (!entry.isDirectory) {
+                // Extension only - cheap, no header read per row. The full technical picture (bit
+                // depth, hi-res, Atmos) only gets read once a file is actually played; see the Now
+                // Playing screen's technical line.
+                Text(
+                    entry.name.substringAfterLast('.', "").uppercase(),
+                    style = Winamp.smallStyle,
+                    color = Winamp.GreenDim,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
         }
         if (!entry.isDirectory) {
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {

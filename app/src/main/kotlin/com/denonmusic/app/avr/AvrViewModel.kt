@@ -139,10 +139,18 @@ class AvrViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Persists the choice for [PlayerViewModel]'s own future queue-start edge, and also applies it to
+     * the receiver right now - picking Auto Direct/Pure Direct while something is already playing is
+     * a request to switch sound mode immediately, not just a preference for the next track. Without
+     * this, choosing a policy here silently did nothing until playback happened to restart.
+     */
     fun setBitPerfectPolicy(policy: BitPerfectPolicy) {
+        val client = session.avrClient
         viewModelScope.launch {
             settings.setBitPerfectPolicy(policy.name)
             _uiState.value = _uiState.value.copy(bitPerfectPolicy = policy)
+            client?.let { runCatching { it.applyBitPerfectPolicy(policy) } }
         }
     }
 }

@@ -11,7 +11,7 @@ import com.denonmusic.data.media.MediaInfoCacheEntity
 
 @Database(
     entities = [BrowseStackEntity::class, BrowseCacheEntity::class, MediaInfoCacheEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

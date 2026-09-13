@@ -20,6 +20,8 @@ data class MediaInfoCacheEntity(
     val channels: Int,
     val bitrateKbps: Int?,
     val isVbr: Boolean?,
+    val codecLabel: String? = null,
+    val isLossy: Boolean = false,
     val cachedAt: Long,
 )
 
@@ -34,6 +36,8 @@ fun AudioFormatInfo.toCacheEntity(path: String, mtime: Long, size: Long, cachedA
         channels = channels,
         bitrateKbps = bitrateKbps,
         isVbr = isVbr,
+        codecLabel = codecLabel,
+        isLossy = isLossy,
         cachedAt = cachedAt,
     )
 
@@ -44,4 +48,6 @@ fun MediaInfoCacheEntity.toAudioFormatInfo(): AudioFormatInfo = AudioFormatInfo(
     channels = channels,
     bitrateKbps = bitrateKbps,
     isVbr = isVbr,
+    codecLabel = codecLabel,
+    isLossy = isLossy,
 )

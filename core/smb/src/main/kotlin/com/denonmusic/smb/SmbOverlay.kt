@@ -105,7 +105,10 @@ class SmbOverlay(private val credentials: SmbCredentials) {
     }
 
     companion object {
-        private const val HEADER_READ_LIMIT_BYTES = 64 * 1024
+        // 512KB rather than the 64KB every other parser here needs, to give Mp4HeaderParser's
+        // `moov`/`stsd` walk enough room on a file with a larger-than-usual `moov` (multiple codec
+        // variants, extra metadata atoms) - still a trivial read over a LAN SMB share.
+        private const val HEADER_READ_LIMIT_BYTES = 512 * 1024
         private val FOLDER_ART_NAMES = listOf("folder.jpg", "cover.jpg")
     }
 }
