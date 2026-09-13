@@ -54,7 +54,7 @@ fun MiniPlayerBar(state: PlayerUiState, onTogglePlay: () -> Unit, onExpand: () -
                     style = Winamp.labelStyle,
                     color = Winamp.Green,
                 )
-                Text("DEGRADED BRIDGE MODE", style = Winamp.smallStyle, color = Winamp.Amber)
+                Text("SMB MODE - PROXIED VIA ANDROID APP", style = Winamp.smallStyle, color = Winamp.Amber)
             } else {
                 Text(
                     text = np?.song?.takeIf { it.isNotBlank() } ?: "NO TRACK",

@@ -11,11 +11,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -34,10 +38,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.denonmusic.app.player.PlayerUiState
 import com.denonmusic.app.player.PlayerViewModel
+import com.denonmusic.app.player.TechnicalInfo
 import com.denonmusic.app.player.icon
 import com.denonmusic.app.player.next
 import com.denonmusic.app.ui.Winamp
 import com.denonmusic.app.ui.bevel
+import com.denonmusic.avr.SignalType
 import com.denonmusic.heos.PlayState
 import com.denonmusic.heos.RepeatMode
 import com.denonmusic.smb.AudioFormatInfo
@@ -78,7 +84,7 @@ fun NowPlayingScreen(playerViewModel: PlayerViewModel, onBack: () -> Unit) {
                 val item = state.bridgeQueue.currentItem
                 Text(item?.displayName ?: "NO TRACK", style = Winamp.titleStyle, color = Winamp.Green)
                 Text(
-                    "DEGRADED BRIDGE MODE",
+                    "SMB MODE - PROXIED VIA ANDROID APP",
                     style = Winamp.smallStyle,
                     color = Winamp.Amber,
                     modifier = Modifier.padding(top = 4.dp),
@@ -98,6 +104,9 @@ fun NowPlayingScreen(playerViewModel: PlayerViewModel, onBack: () -> Unit) {
                 val subtitle = listOfNotNull(np?.artist?.takeIf { it.isNotBlank() }, np?.album?.takeIf { it.isNotBlank() })
                     .joinToString(" — ")
                 Text(subtitle.ifEmpty { "—" }, style = Winamp.labelStyle, modifier = Modifier.padding(top = 8.dp))
+                state.technicalInfo?.summary()?.let {
+                    Text(it, style = Winamp.smallStyle, modifier = Modifier.padding(top = 4.dp))
+                }
             }
 
             ProgressRow(state)
@@ -159,6 +168,25 @@ fun NowPlayingScreen(playerViewModel: PlayerViewModel, onBack: () -> Unit) {
                 )
                 Text("${state.volume ?: 0}", style = Winamp.smallStyle)
             }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                IconButton(onClick = playerViewModel::toggleMute) {
+                    Icon(
+                        if (state.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = "Mute",
+                        tint = if (state.muted) Winamp.Amber else Winamp.Green,
+                    )
+                }
+                IconButton(onClick = playerViewModel::stop) {
+                    Icon(Icons.Filled.Stop, contentDescription = "Stop", tint = Winamp.Green)
+                }
+                IconButton(onClick = playerViewModel::powerOff) {
+                    Icon(Icons.Filled.PowerSettingsNew, contentDescription = "Power off", tint = Winamp.Amber)
+                }
+            }
         }
     }
 }
@@ -192,6 +220,27 @@ private fun Long.toClock(): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return String.format(Locale.US, "%d:%02d", minutes, seconds)
+}
+
+/**
+ * e.g. "PCM 44.1 kHz • 6 ch active" for the native-HEOS technical line - read straight off the AVR's
+ * telnet port rather than HEOS (which never reports format), so it works for any source, DLNA/Plex
+ * included, not just the phase-6 bridge's own [AudioFormatInfo].
+ */
+private fun TechnicalInfo.summary(): String? {
+    if (signalType == null && sampleRateKhz == null && activeOutputChannels == 0) return null
+    return buildString {
+        append(
+            when (signalType) {
+                SignalType.Pcm -> "PCM"
+                SignalType.Dsd -> "DSD"
+                SignalType.Analog -> "ANALOG"
+                SignalType.Unknown, null -> "SIGNAL"
+            },
+        )
+        sampleRateKhz?.let { append(" %.1f kHz".format(Locale.US, it)) }
+        if (activeOutputChannels > 0) append(" • $activeOutputChannels ch active")
+    }
 }
 
 /** e.g. "FLAC 24-bit/192.0 kHz Stereo" or "DSF 2.8 MHz Stereo" for the bridge mode technical line. */

@@ -110,6 +110,20 @@ fun BrowseScreen(viewModel: BrowseViewModel = hiltViewModel()) {
             ConnectionBanner(state.connection)
             Breadcrumb(state.breadcrumb.map { it.displayName }, onClick = viewModel::goToBreadcrumb)
 
+            // Mirrors the SMB browser's own "PLAY ALL IN FOLDER" / "ADD FOLDER TO QUEUE" buttons -
+            // the equivalent top-bar icon existed but was easy to miss, so the same action gets a
+            // visible label here too for the native HEOS-indexed path.
+            if (state.isPlayableContainer) {
+                Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    TextButton(onClick = { viewModel.playAllCurrentContainer(QueueAction.ReplaceAndPlay) }) {
+                        Text("PLAY ALL", style = Winamp.smallStyle, color = Winamp.Amber)
+                    }
+                    TextButton(onClick = { viewModel.playAllCurrentContainer(QueueAction.AddToEnd) }) {
+                        Text("ADD ALL TO QUEUE", style = Winamp.smallStyle, color = Winamp.Amber)
+                    }
+                }
+            }
+
             var bridgeOpen by remember { mutableStateOf(false) }
 
             if (state.isLoading && state.items.isEmpty()) {
@@ -142,7 +156,7 @@ fun BrowseScreen(viewModel: BrowseViewModel = hiltViewModel()) {
             // reach files outside whatever a DLNA/SMB source happens to have picked up.
             TextButton(onClick = { bridgeOpen = !bridgeOpen }) {
                 Text(
-                    if (bridgeOpen) "HIDE DEGRADED BRIDGE MODE" else "DEGRADED BRIDGE MODE (SMB)",
+                    if (bridgeOpen) "HIDE SMB MODE - PROXIED VIA ANDROID APP" else "SMB MODE - PROXIED VIA ANDROID APP",
                     style = Winamp.labelStyle,
                     color = Winamp.Amber,
                 )
@@ -282,7 +296,7 @@ private fun BridgeModeTester(
     var smbPath by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     Column(modifier = Modifier.padding(top = 16.dp)) {
-        Text("DEGRADED BRIDGE MODE — no gapless, no DSD guarantee", style = Winamp.smallStyle, color = Winamp.Amber)
+        Text("SMB MODE - PROXIED VIA ANDROID APP — no gapless, no DSD guarantee", style = Winamp.smallStyle, color = Winamp.Amber)
 
         TextButton(onClick = {
             browserOpen = !browserOpen

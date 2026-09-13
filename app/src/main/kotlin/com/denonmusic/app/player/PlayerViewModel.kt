@@ -8,6 +8,7 @@ import com.denonmusic.app.bridge.BridgeQueueState
 import com.denonmusic.app.heos.HeosConnectionState
 import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.avr.BitPerfectPolicy
+import com.denonmusic.avr.SignalType
 import com.denonmusic.data.settings.SettingsRepository
 import com.denonmusic.heos.NowPlaying
 import com.denonmusic.heos.PlayState
@@ -25,17 +26,30 @@ import kotlinx.coroutines.launch
 
 data class Progress(val positionMillis: Long, val durationMillis: Long)
 
+/**
+ * The technical detail HEOS itself never reports (it only ever gives song/artist/album), read
+ * straight off the AVR's own telnet port instead - source-independent, so this works the same for a
+ * native HEOS/DLNA queue as it did for the phase-6 bridge's [com.denonmusic.smb.AudioFormatInfo].
+ */
+data class TechnicalInfo(
+    val signalType: SignalType?,
+    val sampleRateKhz: Double?,
+    val activeOutputChannels: Int,
+)
+
 data class PlayerUiState(
     val pid: String? = null,
     val nowPlaying: NowPlaying? = null,
     val playState: PlayState? = null,
     val volume: Int? = null,
+    val muted: Boolean = false,
     val repeat: RepeatMode? = null,
     val shuffle: Boolean? = null,
     val progress: Progress = Progress(0, 0),
     val queue: List<QueueItem> = emptyList(),
     val message: String? = null,
     val bridgeQueue: BridgeQueueState = BridgeQueueState(),
+    val technicalInfo: TechnicalInfo? = null,
 ) {
     /**
      * True while [bridgeQueue] holds the track actually driving the receiver right now. Trusting our
@@ -118,6 +132,23 @@ class PlayerViewModel @Inject constructor(
             applyBitPerfectPolicyOnPlaybackStart()
         }
         lastPlayState = playState
+        refreshTechnicalInfo()
+    }
+
+    /**
+     * Reads the signal the AVR is actually receiving right now. Unlike [applyBitPerfectPolicyOnPlaybackStart]
+     * this isn't gated on a play-state edge: [refreshAll] itself only runs on a handful of HEOS
+     * events (now-playing/state/volume/repeat/shuffle changed), not every progress tick, so querying
+     * the AVR's telnet port here as often as that runs is cheap enough not to need its own gate.
+     */
+    private suspend fun refreshTechnicalInfo() {
+        val client = avrSession.avrClient ?: return
+        val info = TechnicalInfo(
+            signalType = runCatching { client.signalType() }.getOrNull(),
+            sampleRateKhz = runCatching { client.sampleRateKhz() }.getOrNull(),
+            activeOutputChannels = runCatching { client.outputChannels() }.getOrDefault(emptyList()).size,
+        )
+        _uiState.value = _uiState.value.copy(technicalInfo = info)
     }
 
     /**
@@ -154,6 +185,11 @@ class PlayerViewModel @Inject constructor(
                     }
                     "player_queue_changed" -> refreshQueue(pid)
                 }
+                if (frame.eventName == "player_volume_changed") {
+                    frame.attributes["mute"]?.let { mute ->
+                        _uiState.value = _uiState.value.copy(muted = mute == "on")
+                    }
+                }
             }
         }
     }
@@ -180,6 +216,31 @@ class PlayerViewModel @Inject constructor(
         val client = session.heosClient ?: return
         val pid = _uiState.value.pid ?: return
         viewModelScope.launch { runCatching { client.playPrevious(pid) } }
+    }
+
+    fun stop() {
+        val client = session.heosClient ?: return
+        val pid = _uiState.value.pid ?: return
+        viewModelScope.launch {
+            runCatching { client.setPlayState(pid, PlayState.Stop) }
+                .onSuccess { _uiState.value = _uiState.value.copy(playState = PlayState.Stop) }
+        }
+    }
+
+    fun toggleMute() {
+        val client = session.heosClient ?: return
+        val pid = _uiState.value.pid ?: return
+        val next = !_uiState.value.muted
+        viewModelScope.launch {
+            runCatching { client.setMute(pid, next) }
+                .onSuccess { _uiState.value = _uiState.value.copy(muted = next) }
+        }
+    }
+
+    /** Standby, not the HEOS module itself - the amp section is what the user means by "off" here. */
+    fun powerOff() {
+        val client = avrSession.avrClient ?: return
+        viewModelScope.launch { runCatching { client.powerStandby() } }
     }
 
     fun setVolume(level: Int) {
