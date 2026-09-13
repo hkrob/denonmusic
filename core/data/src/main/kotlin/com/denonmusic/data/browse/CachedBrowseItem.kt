@@ -17,9 +17,10 @@ data class CachedBrowseItem(
     val isPlayable: Boolean,
     val artist: String?,
     val album: String?,
+    val sid: String? = null,
 ) {
     fun toBrowseItem(): BrowseItem =
-        BrowseItem(name, imageUrl, mediaType, cid, mid, isContainer, isPlayable, artist, album)
+        BrowseItem(name, imageUrl, mediaType, cid, mid, isContainer, isPlayable, artist, album, sid)
 
     companion object {
         fun from(item: BrowseItem): CachedBrowseItem = CachedBrowseItem(
@@ -32,6 +33,7 @@ data class CachedBrowseItem(
             isPlayable = item.isPlayable,
             artist = item.artist,
             album = item.album,
+            sid = item.sid,
         )
     }
 }

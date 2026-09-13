@@ -110,12 +110,14 @@ fun BrowseScreen(viewModel: BrowseViewModel = hiltViewModel()) {
             ConnectionBanner(state.connection)
             Breadcrumb(state.breadcrumb.map { it.displayName }, onClick = viewModel::goToBreadcrumb)
 
+            var bridgeOpen by remember { mutableStateOf(false) }
+
             if (state.isLoading && state.items.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = Winamp.Green)
                 }
             } else if (state.items.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("NOTHING HERE.", style = Winamp.labelStyle, color = Winamp.GreenDim)
                         Text(
@@ -126,18 +128,36 @@ fun BrowseScreen(viewModel: BrowseViewModel = hiltViewModel()) {
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             modifier = Modifier.padding(top = 4.dp),
                         )
-                        BridgeModeTester(
-                            onPlayUrl = viewModel::playBridgeUrl,
-                            onPlaySmbPath = viewModel::playBridgeFromSmb,
-                            onPlayFolder = viewModel::playBridgeFolder,
-                            onAddToQueue = viewModel::addBridgeToQueue,
-                        )
                     }
                 }
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(modifier = Modifier.weight(1f)) {
                     items(state.items) { item ->
                         BrowseRow(item = item, onOpen = { viewModel.open(item) }, onAction = { viewModel.queue(item, it) })
+                    }
+                }
+            }
+
+            // Always reachable, not just when HEOS has nothing indexed - the bridge is also how you
+            // reach files outside whatever a DLNA/SMB source happens to have picked up.
+            TextButton(onClick = { bridgeOpen = !bridgeOpen }) {
+                Text(
+                    if (bridgeOpen) "HIDE DEGRADED BRIDGE MODE" else "DEGRADED BRIDGE MODE (SMB)",
+                    style = Winamp.labelStyle,
+                    color = Winamp.Amber,
+                )
+            }
+            if (bridgeOpen) {
+                Box(modifier = Modifier.heightIn(max = 420.dp)) {
+                    LazyColumn {
+                        item {
+                            BridgeModeTester(
+                                onPlayUrl = viewModel::playBridgeUrl,
+                                onPlaySmbPath = viewModel::playBridgeFromSmb,
+                                onPlayFolder = viewModel::playBridgeFolder,
+                                onAddToQueue = viewModel::addBridgeToQueue,
+                            )
+                        }
                     }
                 }
             }

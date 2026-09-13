@@ -103,6 +103,9 @@ class HeosConnection(
     }
 
     private suspend fun complete(frame: HeosFrame) {
+        // Not a real answer - the caller's Pending entry (and its command timeout) must stay in
+        // place for the actual result, which arrives later under the same sequence.
+        if (frame.isCommandUnderProcess) return
         val waiter = pendingLock.withLock {
             val bySequence = frame.sequence?.let { pending.remove(it) }
             // Not every firmware echoes every argument back. Fall back to the oldest caller still

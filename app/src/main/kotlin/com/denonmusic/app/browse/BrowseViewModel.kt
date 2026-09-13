@@ -128,12 +128,15 @@ class BrowseViewModel @Inject constructor(
     fun open(item: BrowseItem) {
         if (session.heosClient == null) return
         val current = _uiState.value.breadcrumb.lastOrNull() ?: return
-        if (!item.isContainer || item.cid == null) return
+        if (!item.isContainer || (item.cid == null && item.sid == null)) return
         viewModelScope.launch {
+            // A row can carry its own sid instead of a cid - that's a nested source (e.g. one DLNA
+            // server under the aggregate "Local Music" source) rather than a folder within the
+            // current one, so it replaces the sid instead of extending the current one's cid.
             val newStack = _uiState.value.breadcrumb + BrowseStackEntity(
                 position = _uiState.value.breadcrumb.size,
-                sid = current.sid,
-                cid = item.cid,
+                sid = item.sid ?: current.sid,
+                cid = item.sid?.let { null } ?: item.cid,
                 displayName = item.name,
             )
             browseRepository.replaceStack(

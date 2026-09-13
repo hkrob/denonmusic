@@ -60,6 +60,20 @@ class HeosFrameParserTest {
     }
 
     @Test
+    fun `recognises the interim ack a slow browse sends before its real result`() {
+        val ack = HeosFrameParser.parse(
+            """{"heos":{"command":"browse/browse","result":"success","message":"command under process&sid=-66917606&SEQUENCE=5"}}""",
+        )
+        assertTrue(assertNotNull(ack).isCommandUnderProcess)
+        assertEquals(5L, ack.sequence, "the ack echoes the same correlation id as the real result")
+
+        val result = HeosFrameParser.parse(
+            """{"heos":{"command":"browse/browse","result":"success","message":"sid=-66917606&SEQUENCE=5&returned=1&count=1"},"payload":[]}""",
+        )
+        assertFalse(assertNotNull(result).isCommandUnderProcess)
+    }
+
+    @Test
     fun `ignores noise that is not a frame`() {
         assertNull(HeosFrameParser.parse(""))
         assertNull(HeosFrameParser.parse("   "))

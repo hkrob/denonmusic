@@ -23,6 +23,15 @@ data class HeosFrame(
     /** Correlation id echoed back from the command, when one was sent. */
     val sequence: Long? get() = attributes[HeosProtocol.SEQUENCE]?.toLongOrNull()
 
+    /**
+     * True for the interim ack a slow command (e.g. browsing into a DLNA/Plex source, which the
+     * receiver has to poll out-of-band) sends before its real result. This ack echoes back every
+     * argument the caller sent - [sequence] included - so it is otherwise indistinguishable from the
+     * final response by correlation id alone; callers must let this one pass through and keep
+     * waiting for the frame that actually carries a result.
+     */
+    val isCommandUnderProcess: Boolean get() = attributes.containsKey("command under process")
+
     /** Event name with the `event/` prefix stripped, or null for responses. */
     val eventName: String? get() = if (isEvent) command.removePrefix("event/") else null
 
@@ -98,6 +107,13 @@ data class BrowseItem(
     val isPlayable: Boolean,
     val artist: String?,
     val album: String?,
+    /**
+     * Set instead of [cid] for a nested music source - e.g. browsing the aggregate "Local Music"
+     * source (sid 1024) returns one row per DLNA/HEOS server behind it, each carrying its own `sid`
+     * rather than a `cid` within 1024. Navigating into one of these means switching to *this* sid
+     * with a null cid, not appending a cid onto the parent's sid.
+     */
+    val sid: String?,
 ) {
     /** A track can be queued directly with its [mid]. */
     val isTrack: Boolean get() = !isContainer && isPlayable && mid != null
@@ -203,16 +219,22 @@ internal fun JsonElement.toMusicSources(): List<MusicSource> =
 internal fun JsonElement.toBrowseItems(): List<BrowseItem> =
     (this as? JsonArray).orEmptyArray().map { element ->
         val obj = element.jsonObject
+        val sid = obj.str("sid")
         BrowseItem(
             name = obj.str("name").orEmpty(),
             imageUrl = obj.str("image_url"),
             mediaType = obj.str("type"),
             cid = obj.str("cid"),
             mid = obj.str("mid"),
-            isContainer = obj.bool("container") ?: false,
+            // A nested-source row (browsing the aggregate "Local Music" source down into one DLNA/HEOS
+            // server behind it) carries a bare `sid` with no `container` field at all - still a
+            // navigable row, so a missing `container` defaults to true whenever there's a sid to
+            // browse into rather than defaulting to a dead end.
+            isContainer = obj.bool("container") ?: (sid != null),
             isPlayable = obj.bool("playable") ?: false,
             artist = obj.str("artist"),
             album = obj.str("album"),
+            sid = sid,
         )
     }
 

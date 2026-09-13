@@ -466,3 +466,39 @@ Next up: EncryptedSharedPreferences for the now-real SMB credentials (see the kn
 the Now Playing technical panel + chain-integrity indicator UI that consumes `:core:smb`/`ChainIntegrity`,
 folder-level format badges in Browse, and Phase 6 (bridge-mode fallback polish - the degraded
 `play_stream` path already exists from earlier testing but was never meant to be the primary path).
+
+## Plex DLNA as the primary source, and three real bugs it exposed
+
+`sid 1024` stopped being empty once Plex's DLNA server was fixed up on the unraid side (a port
+conflict with Jellyfin over `1900/udp` was blocking Plex's own DLNA announce - unrelated to this app,
+fixed at the infra layer). The moment there was real nested content to browse into, three bugs surfaced
+that a same-level, always-fast source (like the earlier SMB-bridge testing) never exercised:
+
+1. **`BrowseItem` never parsed the wire's `sid` field.** Browsing the aggregate "Local Music" source
+   (sid 1024) returns one row per DLNA/HEOS server behind it, each carrying its own `sid` instead of a
+   `cid` within 1024 - the model had no field for that at all, so every such row silently had `cid =
+   null`. Added `BrowseItem.sid`, and `BrowseViewModel.open()` now switches to `item.sid` with a null
+   `cid` when present, instead of always extending the current level's `sid` with `item.cid`.
+
+2. **A nested-source row has no `container` field at all**, not even `"no"` - `isContainer` defaulted
+   to `false` for it, so tapping the row silently no-opped (neither the container nor the track branch
+   in `BrowseRow`'s `onClick` matched). Fixed by defaulting `isContainer` to `true` whenever the row
+   carries a `sid` to browse into.
+
+3. **The real one, at the protocol layer**: browsing into a DLNA/Plex source is slow enough that the
+   receiver sends an interim `"command under process"` acknowledgment before the real result - and that
+   ack echoes back every argument from the request, `SEQUENCE` included. `HeosConnection.complete()`
+   matched pending requests by `SEQUENCE` first, so it treated the ack as the final answer, completed
+   the deferred with no payload, and removed the pending entry - meaning the real result that arrived
+   moments later had nothing left waiting for it and was silently dropped. Every browse into Plex came
+   back "NOTHING HERE" even though the receiver was about to send exactly the right payload. Fixed by
+   adding `HeosFrame.isCommandUnderProcess` (detects the bare `"command under process"` token
+   `parseMessage` puts in the attributes map) and having `complete()` ignore that frame instead of
+   resolving on it. This was invisible in every previous test because every source touched so far
+   answered in a single frame; it only shows up once a source is slow enough to need the two-frame
+   ack/result pattern, which the spec allows for any command, not just browse.
+
+Verified against real hardware end-to-end after the fix: BROWSE > LOCAL MUSIC > Plex Media Server:
+Sugar > Music > Music > All Artists > Adele > 21 > Rolling in the Deep, queued and playing through real
+HEOS (`qid=1`, `get_play_state` returned `state=play`), Now Playing showing the real title/artist/album
+- not bridge mode, no `play_stream` involved. Tested at volume 8.
