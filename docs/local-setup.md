@@ -296,23 +296,66 @@ Two real snags surfaced getting there, both about *authentication*, not about th
   `SmbOverlay` directly (not committed - see the module's tests for the fixture-based coverage that
   *is* kept).
 
-**Do this in the app once, by hand:** open Settings -> SMB SHARE and enter host `10.1.10.10`, share
-`arr`, username `denon`, password `denon`, then Save. (Not pre-filled or hardcoded anywhere in the
-repo - credentials belong in the running app's DataStore, not in source control. Attempting to
-automate this fill via `adb shell input text` hit repeated IME-reflow coordinate issues switching
-between fields - not worth fighting further since the underlying `SmbOverlay`/jcifs-ng path is already
-proven via the direct JVM test above; the Settings screen itself reuses the same `OutlinedTextField`
-pattern already proven working in the Browse screen's AVR-host entry.)
+**The Settings screen itself was also filled in and exercised on the phone** (host `10.1.10.10`,
+share `arr`, username/password `denon`/`denon`) - this took real trial and error via `adb shell input
+tap`/`input text`, not because of any app bug: the on-screen keyboard covers the lower fields, so a
+coordinate valid before the keyboard opens is invalid after (it now points at a keyboard key or an
+obscured field), and `KEYCODE_BACK` reliably closes the IME alone without navigating away, while
+`KEYCODE_ESCAPE` does the opposite. Once filled correctly and saved, the app's own "SMB PARSE TEST"
+panel returned `AudioFormatInfo(container=Flac, sampleRateHz=44100, bitsPerSample=24, channels=2, ...)`
+for the real Sinatra file above - the full path (`SettingsScreen` -> `SettingsViewModel` ->
+`MediaInfoRepository` -> `SmbOverlay` -> real jcifs-ng call -> `FlacHeaderParser`) verified through the
+running UI, not just a standalone JVM test.
+
+## Phase 6 done (2026-09-13): bridge-mode fallback, the plan's actual design
+
+The plan's phase-6 fallback is "the phone serves SMB over Range-capable HTTP via `play_stream?url=`."
+The phase-2 "DEGRADED BRIDGE TEST" tester (a raw URL field calling `play_stream` directly) satisfied
+"opt-in, clearly labelled" but not the "phone serves SMB" part - it required something else (an nginx
+container, in the phase-2 testing) to actually be the HTTP server. This phase builds that server.
+
+`SmbBridgeServer` (`:core:smb`) is a minimal single-purpose HTTP/1.1 server over a raw `ServerSocket`:
+one file per request, thread-per-connection, `Connection: close`, Range-capable (single range only -
+the only form this app ever needs). `BridgeResource` describes one servable file (length, MIME type,
+and a function that reopens the underlying stream at any byte offset - reopen-and-skip rather than
+holding one shared seekable stream, since nothing here needs more than one receiver fetching one file
+at a time). `SmbOverlay.openBridgeResource` backs a resource with a real SMB file. 8 new unit tests
+(38 total in `:core:smb` now) cover plain GET, ranged GET (closed and open-ended), unknown token,
+out-of-range request, and the content-type mapping.
+
+Wired into the app as `SmbBridgeService` (one server for the process lifetime, started lazily): given
+an SMB-relative path and the saved credentials, it registers a token, finds the phone's own LAN IPv4
+address (`NetworkInterface` enumeration, skipping loopback), and returns a
+`http://<phone-ip>:<port>/<token>` URL ready for `play_stream`. The Browse screen's bridge tester now
+offers this as the primary option ("PLAY FROM SMB", a bare file path) alongside the original raw-URL
+field, both still gated behind the same "DEGRADED BRIDGE MODE - no gapless, no DSD guarantee" label
+the plan calls for.
+
+**Verified against the real unraid share, deliberately stopping short of playing audio.** A direct
+JVM test opened a real `SmbOverlay.openBridgeResource` against the Sinatra FLAC (14,258,733 bytes),
+started `SmbBridgeServer` on it, and fetched `bytes=0-9` over a real loopback HTTP request: got back
+`206 Partial Content`, `Content-Type: audio/flac`, `Content-Range: bytes 0-9/14258733` - the exact
+shape a receiver's Range GET would see. Stopped there rather than actually calling `play_stream`
+against the real AVR-X4500H, since it was audibly playing something in the room at the time and
+swapping its stream without asking first would have interrupted whoever's listening - the full
+loop (URL -> `play_stream` -> audible on the receiver) is the one piece of phase 6 still to confirm
+in person.
 
 ## Continuing the branch
 
-Work continues on `claude/android-smb-denon-player-9710bx`. Phases 1-5 are done. Phases 1-4 are
-verified end-to-end against the real receiver and phone; Phase 5's parsers and jcifs-ng path are
-verified against real files on the real unraid share (see above), though the Settings-screen
-credential entry itself hasn't been click-tested end-to-end in the running app (see above).  Once a
-share is registered in HEOS itself (still pending - see the DLNA section above), re-verify the full
-browse loop with real content: browse into a folder, all four `aid` actions, force-stop/relaunch
-restoring the same folder and scroll position, and queue reorder.
+Work continues on `claude/android-smb-denon-player-9710bx`. Phases 1-6 are all done and verified
+against real hardware, modulo two narrow gaps called out above: the phase-6 bridge's full loop
+(`play_stream` actually driving audible output on the AVR) wasn't exercised to avoid interrupting a
+listening session, and `EncryptedSharedPreferences` for SMB credentials is still outstanding. Once a
+DLNA server or HEOS-native SMB share is registered in HEOS itself (still pending - see the DLNA
+section above), `sid 1024` stops being empty and the primary HEOS-browse path (not the phase-6
+fallback) becomes exercisable with real content: re-verify browsing into a folder, all four `aid`
+actions, force-stop/relaunch restoring the same folder and scroll position, and queue reorder.
+
+With all six planned phases in place, what's left is UI depth rather than new architecture: the Now
+Playing technical panel + chain-integrity indicator (the plan's payoff for `:core:smb`/`ChainIntegrity`
+existing at all - currently only reachable via the debug SMB parse tester, not surfaced during actual
+playback), folder-level format badges in Browse, and the `EncryptedSharedPreferences` migration.
 
 Next up: EncryptedSharedPreferences for the now-real SMB credentials (see the known gap above), then
 the Now Playing technical panel + chain-integrity indicator UI that consumes `:core:smb`/`ChainIntegrity`,

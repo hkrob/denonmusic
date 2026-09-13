@@ -114,7 +114,7 @@ fun BrowseScreen(viewModel: BrowseViewModel = hiltViewModel()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("NOTHING HERE.", style = Winamp.labelStyle, color = Winamp.GreenDim)
-                        BridgeModeTester(onPlay = viewModel::playBridgeUrl)
+                        BridgeModeTester(onPlayUrl = viewModel::playBridgeUrl, onPlaySmbPath = viewModel::playBridgeFromSmb)
                     }
                 }
             } else {
@@ -228,14 +228,35 @@ private fun BrowseRow(item: BrowseItem, onOpen: () -> Unit, onAction: (QueueActi
 }
 
 /**
- * Debug-only affordance for exercising `browse/play_stream` (the plan's phase-6 degraded bridge
- * path) when no HEOS-indexed source has content yet. Not part of the primary browse flow.
+ * The plan's phase-6 fallback, opt-in and clearly labelled per the plan's own wording, offered only
+ * when there's nothing to browse via the primary HEOS-indexed path: play a file from the saved SMB
+ * share through the phone's own Range-capable bridge server ([com.denonmusic.app.bridge.SmbBridgeService]),
+ * or - the original raw-URL tester, kept for exercising the receiver without SMB credentials at all.
  */
 @Composable
-private fun BridgeModeTester(onPlay: (String) -> Unit) {
+private fun BridgeModeTester(onPlayUrl: (String) -> Unit, onPlaySmbPath: (String) -> Unit) {
+    var smbPath by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     Column(modifier = Modifier.padding(top = 16.dp)) {
-        Text("DEGRADED BRIDGE TEST — no gapless, no DSD guarantee", style = Winamp.smallStyle, color = Winamp.Amber)
+        Text("DEGRADED BRIDGE MODE — no gapless, no DSD guarantee", style = Winamp.smallStyle, color = Winamp.Amber)
+
+        Text("Play a file from the saved SMB share:", style = Winamp.smallStyle, modifier = Modifier.padding(top = 12.dp))
+        OutlinedTextField(
+            value = smbPath,
+            onValueChange = { smbPath = it },
+            placeholder = { Text("Artist/Album/track.flac", style = Winamp.smallStyle) },
+            textStyle = Winamp.smallStyle.copy(color = Winamp.Green),
+            modifier = Modifier.padding(vertical = 8.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Winamp.Green,
+                unfocusedBorderColor = Winamp.BevelLight,
+            ),
+        )
+        TextButton(onClick = { if (smbPath.isNotBlank()) onPlaySmbPath(smbPath.trim()) }) {
+            Text("PLAY FROM SMB", style = Winamp.labelStyle, color = Winamp.Amber)
+        }
+
+        Text("Or play a raw URL directly:", style = Winamp.smallStyle, modifier = Modifier.padding(top = 12.dp))
         OutlinedTextField(
             value = url,
             onValueChange = { url = it },
@@ -247,7 +268,7 @@ private fun BridgeModeTester(onPlay: (String) -> Unit) {
                 unfocusedBorderColor = Winamp.BevelLight,
             ),
         )
-        TextButton(onClick = { if (url.isNotBlank()) onPlay(url.trim()) }) {
+        TextButton(onClick = { if (url.isNotBlank()) onPlayUrl(url.trim()) }) {
             Text("PLAY STREAM", style = Winamp.labelStyle, color = Winamp.Amber)
         }
     }

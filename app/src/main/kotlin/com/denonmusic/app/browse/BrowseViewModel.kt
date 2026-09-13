@@ -2,6 +2,7 @@ package com.denonmusic.app.browse
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.denonmusic.app.bridge.SmbBridgeService
 import com.denonmusic.app.heos.HeosConnectionState
 import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.data.browse.BrowseStackEntity
@@ -42,6 +43,7 @@ class BrowseViewModel @Inject constructor(
     private val browseRepository: BrowseRepository,
     private val sourceRepository: SourceRepository,
     private val settings: SettingsRepository,
+    private val smbBridgeService: SmbBridgeService,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BrowseUiState())
@@ -205,6 +207,23 @@ class BrowseViewModel @Inject constructor(
             runCatching { client.playStream(playerId, url) }
                 .onFailure { e -> _uiState.value = _uiState.value.copy(message = e.message ?: "Stream failed") }
                 .onSuccess { _uiState.value = _uiState.value.copy(message = "Streaming (degraded bridge mode)") }
+        }
+    }
+
+    /**
+     * The bridge fallback's real form per the plan: [path] is a file location within the saved SMB
+     * share, not an arbitrary URL - [SmbBridgeService] serves it itself (Range-capable HTTP) and this
+     * hands the resulting local URL to [playBridgeUrl]'s same one-shot `play_stream` path.
+     */
+    fun playBridgeFromSmb(path: String) {
+        pid ?: return
+        viewModelScope.launch {
+            val url = smbBridgeService.urlFor(path)
+            if (url == null) {
+                _uiState.value = _uiState.value.copy(message = "Set SMB host/share in Settings first, or path not found")
+                return@launch
+            }
+            playBridgeUrl(url)
         }
     }
 }

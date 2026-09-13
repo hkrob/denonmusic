@@ -12,13 +12,11 @@ data class SmbFileStat(val path: String, val mtime: Long, val size: Long)
 
 /**
  * Read-only jcifs-ng overlay onto the same share HEOS is (or will be) indexing. Never writes
- * anything - this app is a controller, and per the plan the phone is never in the audio path; this
+ * anything - this app is a controller, and per the plan the phone is never in the audio path (except
+ * for the phase-6 bridge fallback in [openBridgeResource], the one deliberate exception); this
  * overlay exists purely to read header bytes and folder art HEOS's own metadata doesn't carry.
  *
- * **Unverified against a real share as of this writing.** No SMB/DLNA source has been registered on
- * the HEOS system this project was built against (see docs/local-setup.md), so this class has only
- * ever been exercised in a JVM unit test sense - the parsers it delegates to are thoroughly tested,
- * but jcifs-ng's own network path, and this class's use of it, has not touched a real server.
+ * Verified against a real unraid share (2026-09-13) - see docs/local-setup.md.
  */
 class SmbOverlay(private val credentials: SmbCredentials) {
 
@@ -63,6 +61,24 @@ class SmbOverlay(private val credentials: SmbCredentials) {
 
     fun openStream(path: String): InputStream = SmbFile(smbUrl(path), context).inputStream
 
+    /**
+     * Backs [SmbBridgeServer]'s phase-6 fallback: stats [path] once for its length/content-type, then
+     * hands back a resource that reopens the file and skips to any requested offset on demand, so one
+     * `BridgeResource` can answer both a plain GET and a ranged one.
+     */
+    fun openBridgeResource(path: String): BridgeResource? {
+        val stat = stat(path) ?: return null
+        return BridgeResource(
+            length = stat.size,
+            contentType = contentTypeForPath(path),
+            openAt = { offset ->
+                val stream = openStream(path)
+                skipFully(stream, offset)
+                stream
+            },
+        )
+    }
+
     companion object {
         private const val HEADER_READ_LIMIT_BYTES = 64 * 1024
         private val FOLDER_ART_NAMES = listOf("folder.jpg", "cover.jpg")
@@ -89,4 +105,18 @@ private class BoundedInputStream(private val delegate: InputStream, private val 
     }
 
     override fun close() = delegate.close()
+}
+
+/** `InputStream.skipNBytes` needs API 31; this project's minSdk is 26. */
+private fun skipFully(input: InputStream, count: Long) {
+    var remaining = count
+    while (remaining > 0) {
+        val skipped = input.skip(remaining)
+        if (skipped <= 0) {
+            if (input.read() == -1) throw java.io.EOFException()
+            remaining--
+        } else {
+            remaining -= skipped
+        }
+    }
 }
