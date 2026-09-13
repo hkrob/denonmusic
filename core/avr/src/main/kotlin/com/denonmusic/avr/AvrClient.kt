@@ -49,7 +49,19 @@ class AvrClient(private val connection: AvrConnection) {
 
     suspend fun setSoundMode(mode: SoundMode) = connection.send(mode.wire)
 
-    /** No-op when [policy] is [BitPerfectPolicy.Off]. */
+    /**
+     * No-op when [policy] is [BitPerfectPolicy.Off].
+     *
+     * Engaging `MSPURE DIRECT` on the AVR-X4500H probed for this project only auto-dims its own front
+     * display to `DIM DAR` (Dark), not fully off, even though Denon's own docs describe Pure Direct as
+     * disabling the display outright. Tried overriding that with an explicit `DIM` setter command
+     * (`DIM OFF`, `DIM DAR`, and `DIMDAR` with no separator) directly over telnet - none of the three
+     * changed what a subsequent `DIM ?` reported back, so this receiver's front-display dimmer isn't
+     * remotely controllable through this command at all on this model/firmware, or needs a command
+     * this project has no documentation for. Not chased further - the sound mode itself (the part that
+     * actually matters for bit-perfect playback) does switch correctly; the display staying lit is a
+     * receiver behavior outside this app's control, not a bug in [setSoundMode] below.
+     */
     suspend fun applyBitPerfectPolicy(policy: BitPerfectPolicy) {
         policy.targetMode?.let { setSoundMode(it) }
     }
@@ -102,6 +114,13 @@ class AvrClient(private val connection: AvrConnection) {
         line.contains("PCM", ignoreCase = true) -> SignalType.Pcm
         line.contains("DSD", ignoreCase = true) -> SignalType.Dsd
         line.contains("ANALOG", ignoreCase = true) -> SignalType.Analog
+        // The AVR-X4500H probed for this project never sends a `SYSDA` label for network-sourced
+        // audio (only for HDMI/optical inputs, per the probe) - only the bare numeric code, which
+        // this project has no official table for. Empirically, every HEOS/DLNA-streamed track this
+        // app has queued - regardless of the file's own container or codec - reports code 18, which
+        // matches the architecture: HEOS's network module always decodes to PCM internally before
+        // handing off to the amp section, so a network stream can never arrive as anything else here.
+        line.removePrefix("SSINFAISSIG").trim() == "18" -> SignalType.Pcm
         else -> SignalType.Unknown
     }
 

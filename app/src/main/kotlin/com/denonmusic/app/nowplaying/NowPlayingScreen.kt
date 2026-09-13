@@ -240,6 +240,7 @@ private fun TechnicalInfo.summary(): String? {
         )
         sampleRateKhz?.let { append(" %.1f kHz".format(Locale.US, it)) }
         if (activeOutputChannels > 0) append(" • $activeOutputChannels ch active")
+        if (isHiRes) append(" • HI-RES")
     }
 }
 

@@ -536,3 +536,34 @@ so nothing happened until whatever track was already queued happened to restart 
 was actually wired, in `PlayerViewModel`'s queue-start edge). Fixed by applying it immediately too.
 Verified on real hardware: selecting AutoPureDirect while a track was already playing changed `MS?`
 from `MSSTEREO` to `MSPURE DIRECT` right away, no track restart needed.
+
+## Follow-up: display dimming, Atmos-as-PCM, and native-path signal classification
+
+Three things found chasing user reports against real hardware again after the above:
+
+- **The AVR's front display staying lit under Pure Direct is not an app bug.** `MS?` correctly
+  reports `MSPURE DIRECT` engaged, but the receiver only auto-dims to `DIM DAR` (Dark), not fully
+  off, despite Denon's own docs describing Pure Direct as disabling the display outright. Tried
+  overriding this with an explicit `DIM` setter three different ways over telnet directly (`DIM OFF`,
+  `DIM DAR`, `DIMDAR` with no separator) - none of them changed what a subsequent `DIM ?` reported
+  back. This receiver's display dimmer isn't remotely controllable through this command on this
+  model/firmware (or needs a command this project has no documentation for), so it's left alone -
+  shipping a "fix" that doesn't actually do anything would be worse than not touching it.
+- **Atmos files playing back as "PCM 2.0" on the receiver's own display is expected, not a bug.**
+  HEOS's network-streaming module always decodes network audio to PCM internally before handing off
+  to the amp section - it does not forward a compressed bitstream (Dolby/DTS/Atmos) through for the
+  amp's own decoder to process. That decode path only exists for HDMI/optical inputs. So this app
+  (or any HEOS network client) playing an Atmos-muxed file will always show as decoded PCM at
+  whatever channel count HEOS negotiates - genuine object-based Atmos rendering needs HDMI bitstream
+  passthrough, which no network stream can carry. Not something fixable from this side.
+- **`AvrClient.signalType()` now classifies HEOS/network audio as PCM correctly.** The AVR-X4500H
+  never sends the human-readable `SYSDA` label for network-sourced audio (only for HDMI/optical
+  inputs, confirmed by direct probe) - only a bare numeric `SSINFAISSIG` code, `18`, with no official
+  table in this project to look it up against. Empirically, every HEOS/DLNA track queued through this
+  app - regardless of its own container or codec - reports this same code, which matches the
+  architecture above: a network stream can never arrive as anything but PCM here. Added `18 -> Pcm` to
+  `classifyByCode`'s fallback. Verified on real hardware: Now Playing's technical line for a native
+  Plex-DLNA track changed from the generic "SIGNAL 44.1 kHz" fallback to "PCM 44.1 kHz - 4 ch active".
+  Also added a sample-rate-only Hi-Res proxy for this same native path (PCM >=48kHz, or any DSD) -
+  the AVR's telnet port has no bit-depth command for a network-sourced signal, so this is a weaker
+  signal than the real, header-derived `AudioFormatInfo.isHiRes` the bridge path gets.

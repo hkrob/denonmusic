@@ -35,7 +35,15 @@ data class TechnicalInfo(
     val signalType: SignalType?,
     val sampleRateKhz: Double?,
     val activeOutputChannels: Int,
-)
+) {
+    /**
+     * Sample-rate-only proxy for Hi-Res on this path: the AVR's telnet port has no command for bit
+     * depth on a network-sourced signal (only [com.denonmusic.smb.AudioFormatInfo], read from a file's
+     * own header, ever gets a real one) - PCM above CD quality or any DSD is treated as Hi-Res here.
+     */
+    val isHiRes: Boolean
+        get() = signalType == SignalType.Dsd || (signalType == SignalType.Pcm && (sampleRateKhz ?: 0.0) >= 48.0)
+}
 
 data class PlayerUiState(
     val pid: String? = null,
