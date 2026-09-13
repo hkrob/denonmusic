@@ -129,6 +129,16 @@ class SmbBridgeServerTest {
     }
 
     @Test
+    fun `supported audio file recognises only the parseable formats`() {
+        assertTrue(isSupportedAudioFile("track.flac"))
+        assertTrue(isSupportedAudioFile("Track.MP3"))
+        assertTrue(isSupportedAudioFile("track.dsf"))
+        assertTrue(isSupportedAudioFile("track.dff"))
+        assertTrue(!isSupportedAudioFile("cover.jpg"))
+        assertTrue(!isSupportedAudioFile("album.nfo"))
+    }
+
+    @Test
     fun `server binds an ephemeral port on start and reports it running`() {
         val s = startServer("x".toByteArray())
 

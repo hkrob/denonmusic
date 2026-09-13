@@ -28,3 +28,7 @@ fun contentTypeForPath(path: String): String = when (path.substringAfterLast('.'
     "m4a" -> "audio/mp4"
     else -> "application/octet-stream"
 }
+
+/** True for an extension one of this project's own header parsers actually recognises. */
+fun isSupportedAudioFile(name: String): Boolean =
+    name.substringAfterLast('.', "").lowercase() in setOf("flac", "mp3", "dsf", "dff")

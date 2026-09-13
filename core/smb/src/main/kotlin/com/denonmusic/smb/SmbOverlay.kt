@@ -10,6 +10,9 @@ data class SmbCredentials(val host: String, val share: String, val username: Str
 
 data class SmbFileStat(val path: String, val mtime: Long, val size: Long)
 
+/** One row of a directory listing - a subfolder, or a file the plan's format list recognises. */
+data class SmbEntry(val name: String, val path: String, val isDirectory: Boolean)
+
 /**
  * Read-only jcifs-ng overlay onto the same share HEOS is (or will be) indexing. Never writes
  * anything - this app is a controller, and per the plan the phone is never in the audio path (except
@@ -57,6 +60,28 @@ class SmbOverlay(private val credentials: SmbCredentials) {
             entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
         } ?: return null
         return match.inputStream.use { it.readBytes() }
+    }
+
+    /**
+     * Lists [directoryPath] (empty string for the share root): subfolders first, then files whose
+     * extension one of the plan's format parsers actually recognises, both alphabetical. Filters out
+     * anything else (`.nfo`, artwork, playlists, ...) since this listing exists to pick something to
+     * play, not to be a general-purpose file manager.
+     */
+    fun listDirectory(directoryPath: String): List<SmbEntry>? {
+        val normalized = if (directoryPath.isEmpty() || directoryPath.endsWith("/")) directoryPath else "$directoryPath/"
+        val dir = SmbFile(smbUrl(normalized), context)
+        val children = runCatching { dir.listFiles() }.getOrNull() ?: return null
+        val (folders, files) = children.partition { runCatching { it.isDirectory }.getOrDefault(false) }
+        val folderEntries = folders
+            .filterNot { it.name.startsWith(".") }
+            .map { SmbEntry(name = it.name.removeSuffix("/"), path = normalized + it.name.removeSuffix("/"), isDirectory = true) }
+            .sortedBy { it.name.lowercase() }
+        val fileEntries = files
+            .filter { isSupportedAudioFile(it.name) }
+            .map { SmbEntry(name = it.name, path = normalized + it.name, isDirectory = false) }
+            .sortedBy { it.name.lowercase() }
+        return folderEntries + fileEntries
     }
 
     fun openStream(path: String): InputStream = SmbFile(smbUrl(path), context).inputStream

@@ -2,6 +2,7 @@ package com.denonmusic.app.browse
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,7 +10,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -44,10 +47,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.denonmusic.app.bridge.SmbBrowseViewModel
 import com.denonmusic.app.heos.HeosConnectionState
 import com.denonmusic.app.ui.Winamp
 import com.denonmusic.app.ui.bevel
 import com.denonmusic.heos.BrowseItem
+import com.denonmusic.smb.SmbEntry
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -234,13 +239,32 @@ private fun BrowseRow(item: BrowseItem, onOpen: () -> Unit, onAction: (QueueActi
  * or - the original raw-URL tester, kept for exercising the receiver without SMB credentials at all.
  */
 @Composable
-private fun BridgeModeTester(onPlayUrl: (String) -> Unit, onPlaySmbPath: (String) -> Unit) {
+private fun BridgeModeTester(
+    onPlayUrl: (String) -> Unit,
+    onPlaySmbPath: (String) -> Unit,
+    smbBrowseViewModel: SmbBrowseViewModel = hiltViewModel(),
+) {
+    var browserOpen by remember { mutableStateOf(false) }
     var smbPath by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     Column(modifier = Modifier.padding(top = 16.dp)) {
         Text("DEGRADED BRIDGE MODE — no gapless, no DSD guarantee", style = Winamp.smallStyle, color = Winamp.Amber)
 
-        Text("Play a file from the saved SMB share:", style = Winamp.smallStyle, modifier = Modifier.padding(top = 12.dp))
+        TextButton(onClick = {
+            browserOpen = !browserOpen
+            if (browserOpen) smbBrowseViewModel.open()
+        }) {
+            Text(
+                if (browserOpen) "HIDE SMB BROWSER" else "BROWSE SMB SHARE",
+                style = Winamp.labelStyle,
+                color = Winamp.Amber,
+            )
+        }
+        if (browserOpen) {
+            SmbFileBrowser(viewModel = smbBrowseViewModel, onPlay = { entry -> onPlaySmbPath(entry.path) })
+        }
+
+        Text("Or type a file path directly:", style = Winamp.smallStyle, modifier = Modifier.padding(top = 12.dp))
         OutlinedTextField(
             value = smbPath,
             onValueChange = { smbPath = it },
@@ -271,5 +295,90 @@ private fun BridgeModeTester(onPlayUrl: (String) -> Unit, onPlaySmbPath: (String
         TextButton(onClick = { if (url.isNotBlank()) onPlayUrl(url.trim()) }) {
             Text("PLAY STREAM", style = Winamp.labelStyle, color = Winamp.Amber)
         }
+    }
+}
+
+/** Breadcrumb + a bounded-height folder listing, so tapping through the SMB share doesn't need a typed path. */
+@Composable
+private fun SmbFileBrowser(viewModel: SmbBrowseViewModel, onPlay: (SmbEntry) -> Unit) {
+    val state by viewModel.uiState.collectAsState()
+
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        when (state.hasCredentials) {
+            false -> Text("Set SMB host/share in Settings first.", style = Winamp.smallStyle, color = Winamp.Amber)
+            null -> Box(modifier = Modifier.padding(8.dp)) {
+                CircularProgressIndicator(color = Winamp.Green, modifier = Modifier.size(20.dp))
+            }
+            true -> {
+                val crumbs = listOf("ROOT") + state.pathSegments
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth().background(Winamp.Panel).bevel().padding(horizontal = 8.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(crumbs.withIndex().toList()) { (index, name) ->
+                        Row {
+                            TextButton(onClick = { viewModel.goToBreadcrumb(index - 1) }) {
+                                Text(name.uppercase(), style = Winamp.smallStyle, color = Winamp.Green)
+                            }
+                            if (index != crumbs.lastIndex) {
+                                Icon(
+                                    Icons.Filled.ChevronRight,
+                                    contentDescription = null,
+                                    tint = Winamp.GreenDim,
+                                    modifier = Modifier.align(Alignment.CenterVertically).size(16.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+                Box(modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp).background(Winamp.Background).bevel(inset = true)) {
+                    when {
+                        state.isLoading -> Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = Winamp.Green, modifier = Modifier.size(20.dp))
+                        }
+                        state.error != null -> Text(
+                            state.error!!,
+                            style = Winamp.smallStyle,
+                            color = Winamp.Amber,
+                            modifier = Modifier.padding(16.dp),
+                        )
+                        state.entries.isEmpty() -> Text(
+                            "EMPTY",
+                            style = Winamp.smallStyle,
+                            color = Winamp.GreenDim,
+                            modifier = Modifier.padding(16.dp),
+                        )
+                        else -> LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                            items(state.entries) { entry ->
+                                SmbEntryRow(
+                                    entry = entry,
+                                    onOpen = { viewModel.enter(entry) },
+                                    onPlay = { onPlay(entry) },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmbEntryRow(entry: SmbEntry, onOpen: () -> Unit, onPlay: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = { if (entry.isDirectory) onOpen() else onPlay() })
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (entry.isDirectory) Icons.Filled.Folder else Icons.Filled.MusicNote,
+            contentDescription = null,
+            tint = if (entry.isDirectory) Winamp.Amber else Winamp.Green,
+            modifier = Modifier.size(20.dp),
+        )
+        Text(entry.name, style = Winamp.smallStyle, color = Winamp.Green, modifier = Modifier.padding(start = 10.dp))
     }
 }

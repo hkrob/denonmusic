@@ -341,6 +341,24 @@ swapping its stream without asking first would have interrupted whoever's listen
 loop (URL -> `play_stream` -> audible on the receiver) is the one piece of phase 6 still to confirm
 in person.
 
+## SMB file browser added to the bridge fallback (2026-09-13)
+
+The phase-6 bridge tester originally needed an exact path typed by hand (`Artist/Album/track.flac`).
+`SmbOverlay.listDirectory` (folders first, then only files whose extension a header parser actually
+recognises - `.nfo`, playlists, artwork are filtered out since this listing exists to pick something
+to play, not to be a file manager) backs a small `SmbBrowseViewModel` and a breadcrumb + folder-list UI
+in the Browse screen's "BROWSE SMB SHARE" toggle, so a file can be tapped through folders instead.
+Tapping a file calls the same `playBridgeFromSmb` the manual-path field already used.
+
+**Verified against the real unraid share**: opened the browser, saw the real share root
+(`copyparty`/`images`/`media`/`test`/`torrents`), navigated `media` -> `music` and saw the real genre
+folders (Alternative/Atmos/Blues/City Pop/Classical/...), and confirmed the breadcrumb/collapse toggle
+both work without crashing. Stopped short of tapping an actual audio file, for the same reason as the
+phase-6 write-up above - it would call `play_stream` against the real AVR-X4500H and swap whatever was
+audibly playing in the room. 2 new unit tests for the file-type filter (`isSupportedAudioFile`);
+`listDirectory` itself isn't unit tested, consistent with `findFolderArtwork`'s existing pattern -
+jcifs-touching directory calls are verified against the real share by hand, not mocked.
+
 ## Continuing the branch
 
 Work continues on `claude/android-smb-denon-player-9710bx`. Phases 1-6 are all done and verified
