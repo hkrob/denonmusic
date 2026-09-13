@@ -9,29 +9,34 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.denonmusic.app.avr.AvrScreen
 import com.denonmusic.app.browse.BrowseScreen
 import com.denonmusic.app.nowplaying.NowPlayingScreen
 import com.denonmusic.app.player.MiniPlayerBar
 import com.denonmusic.app.player.PlayerViewModel
 import com.denonmusic.app.queue.QueueScreen
+import com.denonmusic.app.settings.SettingsScreen
 import com.denonmusic.app.ui.Winamp
 
 private enum class MainTab(val route: String, val label: String) {
     Browse("browse", "BROWSE"),
     Queue("queue", "QUEUE"),
+    Avr("avr", "AVR"),
+    Settings("settings", "SETTINGS"),
 }
 
 private const val NOW_PLAYING_ROUTE = "nowplaying"
@@ -65,10 +70,11 @@ fun MainScreen() {
             .navigationBarsPadding(),
     ) {
         if (currentRoute != NOW_PLAYING_ROUTE) {
-            TabRow(
+            ScrollableTabRow(
                 selectedTabIndex = MainTab.entries.indexOfFirst { it.route == currentRoute }.coerceAtLeast(0),
                 containerColor = Winamp.Panel,
                 contentColor = Winamp.Green,
+                edgePadding = 0.dp,
             ) {
                 MainTab.entries.forEach { tab ->
                     Tab(
@@ -90,6 +96,8 @@ fun MainScreen() {
             NavHost(navController = navController, startDestination = MainTab.Browse.route) {
                 composable(MainTab.Browse.route) { BrowseScreen() }
                 composable(MainTab.Queue.route) { QueueScreen(playerViewModel = playerViewModel) }
+                composable(MainTab.Avr.route) { AvrScreen() }
+                composable(MainTab.Settings.route) { SettingsScreen() }
                 composable(NOW_PLAYING_ROUTE) {
                     NowPlayingScreen(playerViewModel = playerViewModel, onBack = { navController.popBackStack() })
                 }

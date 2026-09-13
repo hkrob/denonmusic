@@ -2,8 +2,11 @@ package com.denonmusic.app.player
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.denonmusic.app.avr.AvrSession
 import com.denonmusic.app.heos.HeosConnectionState
 import com.denonmusic.app.heos.HeosSession
+import com.denonmusic.avr.BitPerfectPolicy
+import com.denonmusic.data.settings.SettingsRepository
 import com.denonmusic.heos.NowPlaying
 import com.denonmusic.heos.PlayState
 import com.denonmusic.heos.QueueItem
@@ -15,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 data class Progress(val positionMillis: Long, val durationMillis: Long)
@@ -40,12 +44,15 @@ data class PlayerUiState(
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val session: HeosSession,
+    private val avrSession: AvrSession,
+    private val settings: SettingsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
     private var eventsJob: Job? = null
+    private var lastPlayState: PlayState? = null
 
     init {
         viewModelScope.launch {
@@ -64,6 +71,10 @@ class PlayerViewModel @Inject constructor(
         val client = session.heosClient ?: return
         val player = runCatching { client.getPlayers() }.getOrNull()?.firstOrNull() ?: return
         _uiState.value = _uiState.value.copy(pid = player.pid)
+        // The AVR and HEOS ports live on the same box, so the same host serves both. Started here
+        // too (not only from AvrViewModel) so the bit-perfect policy applies even if the user has
+        // never opened the AVR tab.
+        runCatching { settings.settings.first() }.getOrNull()?.avrHost?.let { avrSession.start(it) }
         refreshAll(player.pid)
         refreshQueue(player.pid)
         subscribeEvents(player.pid)
@@ -82,6 +93,22 @@ class PlayerViewModel @Inject constructor(
             repeat = playMode?.repeat,
             shuffle = playMode?.shuffle,
         )
+        if (playState == PlayState.Play && lastPlayState != PlayState.Play) {
+            applyBitPerfectPolicyOnPlaybackStart()
+        }
+        lastPlayState = playState
+    }
+
+    /**
+     * The plan's bit-perfect policy applies "on queue-start": the moment playback transitions into
+     * [PlayState.Play], not on every progress tick. `lastPlayState` in [refreshAll] is what turns a
+     * level (current state) into that edge (state that just changed).
+     */
+    private suspend fun applyBitPerfectPolicyOnPlaybackStart() {
+        val client = avrSession.avrClient ?: return
+        val policyName = runCatching { settings.settings.first() }.getOrNull()?.bitPerfectPolicy ?: return
+        val policy = runCatching { BitPerfectPolicy.valueOf(policyName) }.getOrNull() ?: return
+        runCatching { client.applyBitPerfectPolicy(policy) }
     }
 
     private suspend fun refreshQueue(pid: String) {

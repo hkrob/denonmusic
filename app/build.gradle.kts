@@ -40,6 +40,7 @@ android {
 
 dependencies {
     implementation(project(":core:heos"))
+    implementation(project(":core:avr"))
     implementation(project(":core:data"))
 
     implementation(libs.androidx.core.ktx)

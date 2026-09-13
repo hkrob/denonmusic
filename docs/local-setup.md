@@ -203,11 +203,66 @@ is still empty (DLNA/HEOS-share setup on Unraid remains pending, see above). Reo
 (`moveQueueItem`) and save-as-playlist are implemented but not yet exercised against hardware -
 worth confirming once there's real queued content to reorder.
 
+## Phase 4 done (2026-09-13): `:core:avr`, verified end-to-end
+
+`:core:avr` is a new pure-JVM module (no Android dependency, same rationale as `:core:heos`):
+`AvrConnection` (one telnet:23 socket, bare-`\r` termination, prefix-matched query/response since
+this protocol carries no correlation id) and `AvrClient` (power/input, sound mode, volume/mute,
+`SSINF*` signal info, `CV?` output map, and `ensureOnAndSelected` for the plan's auto-power-on path).
+19 unit tests against a `FakeAvrServer` (real loopback socket, same shape as `FakeHeosServer`).
+
+Wired into the app: `AvrSession` (mirrors `HeosSession`'s reconnect-with-backoff, one socket instead
+of two), `AvrScreen`/`AvrViewModel` (new AVR tab: input, sound-mode chips including Pure Direct,
+bit-perfect policy, OUTPUT map, signal type), and a `SettingsScreen` for AVR host/input mnemonic and
+SMB credentials (plain DataStore for now, not the plan's EncryptedSharedPreferences - see caveat
+below). Bit-perfect policy is applied from `PlayerViewModel` on the edge into `PlayState.Play` (not
+every progress tick), per the plan's "on queue-start."
+
+**Two real protocol bugs found and fixed by probing the actual AVR-X4500H directly** (raw
+`TcpClient` against port 23, bypassing the app) rather than trusting the plan's `CV?` description:
+
+1. **`CV?` has an explicit `CVEND` terminator line** the plan didn't call out ("no count or
+   terminator" was wrong) - `CVFL 50`/`CVFR 50`/`CVSW 52`/`CVSW2 50`/`CVEND`. `AvrClient.outputChannels`
+   now collects up to and including it (`AvrConnection.queryUntilTerminator`) instead of an
+   earlier "wait for quiet" heuristic.
+2. **The receiver free-runs a full status block (`SSINF*`/`CV*`/`MVMAX`/`DCAUTO`) roughly once a
+   second, unprompted**, independent of anything the app asks for - confirmed by watching raw
+   telnet output with no query in flight. A "wait until quiet" read (both for `CV?` and for
+   `SSINFAISSIG ?`'s numeric-code + `SYSDA`-label pair) can never see quiet and just times out; this
+   is what caused the OUTPUT map and SIGNAL panel to intermittently render empty on the phone despite
+   `query()`-based single-line reads (power/input/sound mode) working fine. Fixed two ways:
+   `SSINFAISSIG` now uses a fixed burst window anchored to the first matching line instead of
+   quiescence (`AvrConnection.queryMatchingAny`), and the OUTPUT map stopped re-querying live
+   entirely - `AvrViewModel` now parses the `CV.../CVEND` blocks the receiver already free-runs
+   straight off the event stream (`AvrClient.parseChannelLine`), which turns the telemetry into a
+   live-updating view for free instead of something to race against. A regression test
+   (`output channels ignore further CV telemetry the receiver free-runs after CVEND`) pins this.
+
+**Also found and fixed while verifying on the phone:** `AvrScreen`'s content column had no
+`verticalScroll`, so on a phone-height screen the OUTPUT map's bottom row and the SIGNAL section were
+laid out but unreachable - confirmed via `uiautomator dump` (nodes existed, off-screen) and fixed by
+adding `.verticalScroll(rememberScrollState())` and replacing the nine-tile `LazyVerticalGrid` with a
+plain chunked `Column`/`Row` grid (a lazy grid can't nest inside a scrollable column with no fixed
+height - it measures against an infinite constraint).
+
+**Verified against the real AVR-X4500H:** input (`SOURCE: NET`), sound mode (`Stereo` correctly
+highlighted), bit-perfect policy chips, and the OUTPUT map/SIGNAL panel - `FL`/`FR`/`SW`/`SW2` green
+and everything else grey while in Stereo, `SIGNAL: PCM`, matching the plan's documented Stereo-mode
+channel set exactly. Power toggle and sound-mode writes are covered by unit tests (wire format
+verified) but were *not* exercised interactively against the real receiver during this session, since
+it was actively playing audio in the room at the time - avoid flipping `PWSTANDBY` or switching sound
+modes on a live listening session without warning whoever's in the room.
+
+**Known gap:** SMB credentials in `SettingsScreen` are stored in plain DataStore, not the plan's
+EncryptedSharedPreferences. Deliberately deferred - `androidx.security-crypto` plus Keystore wiring
+is its own chunk of work, and there's nothing sensitive stored yet (no SMB share has actually been
+exercised - see `:core:smb` below). Do this before shipping.
+
 ## Continuing the branch
 
-Work continues on `claude/android-smb-denon-player-9710bx`. Phases 1-3 are done and verified
+Work continues on `claude/android-smb-denon-player-9710bx`. Phases 1-4 are done and verified
 end-to-end against the real receiver and phone, modulo the empty-library caveat above. Once a share
 is registered in HEOS, re-verify the full loop with real content: browse into a folder, all four
 `aid` actions, force-stop/relaunch restoring the same folder and scroll position, and queue reorder.
-Phase 4 (`:core:avr`: power/input, volume/mute via the AVR directly, sound modes, bit-perfect
-policy, the `CV?` OUTPUT map) is next.
+Phase 5 (`:core:smb`: header parsers, technical panel, chain integrity, artwork, format badges) is
+next.

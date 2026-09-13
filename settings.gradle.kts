@@ -20,6 +20,7 @@ rootProject.name = "denonmusic"
 // so it can be compiled and tested on any machine with a JDK, including CI runners
 // and dev boxes without an Android SDK installed.
 include(":core:heos")
+include(":core:avr")
 
 // Android modules need an SDK. Including them unconditionally makes `./gradlew
 // :core:heos:test` fail at configuration time on a machine without one, which would
@@ -31,8 +32,7 @@ val hasAndroidSdk =
 
 if (hasAndroidSdk) {
     include(":app")
-    // include(":core:avr")
-    // include(":core:smb")
+    include(":core:smb")
     include(":core:data")
     // include(":feature:probe")
 } else {
