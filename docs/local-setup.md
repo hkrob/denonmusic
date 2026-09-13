@@ -359,15 +359,39 @@ audibly playing in the room. 2 new unit tests for the file-type filter (`isSuppo
 `listDirectory` itself isn't unit tested, consistent with `findFolderArtwork`'s existing pattern -
 jcifs-touching directory calls are verified against the real share by hand, not mocked.
 
+## Phase 6's full loop verified, and a real threading bug fixed (2026-09-13)
+
+With the file browser in place, actually pressed "PLAY FROM SMB" against a real file. First attempt
+failed with the exact same message the plan-6 write-up above assumed away: *"Set SMB host/share in
+Settings first, or path not found"* - misleading, since credentials were plainly fine (the browser
+had just listed real folders using them). Temporary logging pinned the real cause: `SmbBridgeService
+.urlFor` called `overlay.openBridgeResource(path)` directly on the caller's dispatcher
+(`viewModelScope`'s `Main`), and jcifs-ng's blocking socket I/O threw `NetworkOnMainThreadException`
+- silently, because it was inside a bare `runCatching { }.getOrNull()` with nothing logging the
+failure. `SettingsScreen`'s own SMB tester never hit this because `SettingsViewModel.testSmbPath`
+happens to wrap its whole body in `withContext(Dispatchers.IO)`; `SmbBridgeService.urlFor` and
+`MediaInfoRepository.getFormatInfo` did not. Both now do - `getFormatInfo` wraps internally so this
+can't be forgotten again by some future caller the way it was here.
+
+**Verified end-to-end at volume 1** (set directly via a raw `heos://player/set_volume` call, then
+confirmed with `get_volume`, before touching playback): tapped "PLAY FROM SMB" on the real Sinatra
+FLAC, got "Streaming (degraded bridge mode)", and confirmed on two independent channels that real
+audio was actually flowing - the AVR's own telnet `SSINFAISSIG ?` reported `SYSDA FLAC` at `SSINFAISFSV
+441` (44.1 kHz, exactly matching the file), and HEOS's `player/get_play_state` reported `state=play`.
+Paused afterward via `set_play_state`. This closes the one gap the original phase-6 write-up left
+open - the full loop (browse -> bridge URL -> `play_stream` -> audible, decoded output on the
+receiver) is now confirmed, not just the HTTP layer in isolation.
+
 ## Continuing the branch
 
 Work continues on `claude/android-smb-denon-player-9710bx`. Phases 1-6 are all done and verified
-against real hardware, modulo two narrow gaps called out above: the phase-6 bridge's full loop
-(`play_stream` actually driving audible output on the AVR) wasn't exercised to avoid interrupting a
-listening session, and `EncryptedSharedPreferences` for SMB credentials is still outstanding. Once a
-DLNA server or HEOS-native SMB share is registered in HEOS itself (still pending - see the DLNA
-section above), `sid 1024` stops being empty and the primary HEOS-browse path (not the phase-6
-fallback) becomes exercisable with real content: re-verify browsing into a folder, all four `aid`
+against real hardware end-to-end, including the phase-6 bridge's full loop (see just above). The one
+remaining gap called out earlier: `EncryptedSharedPreferences` for SMB credentials is still
+outstanding - there's a real account's credentials going through plain DataStore now, so this should
+be next. Once a DLNA server or HEOS-native SMB share is registered in HEOS itself (still pending - see
+the DLNA section above), `sid 1024` stops being empty and the primary HEOS-browse path (not the
+phase-6 fallback) becomes exercisable with real content: re-verify browsing into a folder, all four
+`aid`
 actions, force-stop/relaunch restoring the same folder and scroll position, and queue reorder.
 
 With all six planned phases in place, what's left is UI depth rather than new architecture: the Now

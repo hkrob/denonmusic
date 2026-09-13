@@ -10,7 +10,9 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 
 /**
  * Owns the phase-6 bridge fallback end to end: given an SMB-relative file path and the saved SMB
@@ -36,7 +38,11 @@ class SmbBridgeService @Inject constructor(
         val credentials = SmbCredentials(host, share, saved.smbUsername.orEmpty(), saved.smbPassword.orEmpty())
 
         val overlay = mediaInfoRepository.overlayFor(credentials)
-        val resource = runCatching { overlay.openBridgeResource(path) }.getOrNull() ?: return null
+        // jcifs-ng blocks on real socket I/O; this must never run on the caller's dispatcher (Main,
+        // via viewModelScope) or Android throws NetworkOnMainThreadException.
+        val resource = withContext(Dispatchers.IO) {
+            runCatching { overlay.openBridgeResource(path) }.getOrNull()
+        } ?: return null
 
         if (!server.isRunning) server.start()
         val token = UUID.randomUUID().toString()

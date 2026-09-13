@@ -8,6 +8,8 @@ import com.denonmusic.smb.SmbCredentials
 import com.denonmusic.smb.SmbOverlay
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Bridges the network-facing [SmbOverlay] and the Room cache in `:core:data`, keyed by
@@ -21,12 +23,17 @@ class MediaInfoRepository @Inject constructor(
 ) {
     fun overlayFor(credentials: SmbCredentials): SmbOverlay = SmbOverlay(credentials)
 
-    suspend fun getFormatInfo(overlay: SmbOverlay, path: String): AudioFormatInfo? {
-        val stat = runCatching { overlay.stat(path) }.getOrNull() ?: return null
-        cacheDao.get(path, stat.mtime, stat.size)?.let { return it.toAudioFormatInfo() }
+    /**
+     * jcifs-ng blocks on real socket I/O, so the whole body runs on [Dispatchers.IO] regardless of
+     * the caller's own dispatcher - Android throws `NetworkOnMainThreadException` otherwise, and that
+     * exception is easy to miss when it lands inside a `runCatching` several calls up the stack.
+     */
+    suspend fun getFormatInfo(overlay: SmbOverlay, path: String): AudioFormatInfo? = withContext(Dispatchers.IO) {
+        val stat = runCatching { overlay.stat(path) }.getOrNull() ?: return@withContext null
+        cacheDao.get(path, stat.mtime, stat.size)?.let { return@withContext it.toAudioFormatInfo() }
 
-        val parsed = runCatching { overlay.parseFormat(path) }.getOrNull() ?: return null
+        val parsed = runCatching { overlay.parseFormat(path) }.getOrNull() ?: return@withContext null
         cacheDao.upsert(parsed.toCacheEntity(path = path, mtime = stat.mtime, size = stat.size, cachedAt = System.currentTimeMillis()))
-        return parsed
+        parsed
     }
 }
