@@ -220,16 +220,22 @@ private fun ConnectionBanner(state: HeosConnectionState) {
 }
 
 /**
- * Well-known source names that read fine abbreviated and otherwise eat a disproportionate share of
- * the breadcrumb's width every time they show up (they're the top-level source name, so they appear
- * in *every* breadcrumb below them).
+ * Well-known source-name prefixes that read fine abbreviated and otherwise eat a disproportionate
+ * share of the breadcrumb's width every time they show up (they're the top-level source name, so
+ * they appear in *every* breadcrumb below them). Prefix, not exact match: a DLNA server's own HEOS
+ * source name carries its hostname too (verified on a real device - "Plex Media Server: Sugar"), so
+ * only the well-known part gets replaced and the rest is kept.
  */
-private val BREADCRUMB_ABBREVIATIONS = mapOf(
+private val BREADCRUMB_ABBREVIATIONS = listOf(
     "plex media server" to "Plex",
 )
 
-private fun breadcrumbLabel(name: String): String =
-    BREADCRUMB_ABBREVIATIONS[name.trim().lowercase()] ?: name
+private fun breadcrumbLabel(name: String): String {
+    val trimmed = name.trim()
+    val match = BREADCRUMB_ABBREVIATIONS.firstOrNull { (prefix, _) -> trimmed.lowercase().startsWith(prefix) }
+        ?: return trimmed
+    return match.second + trimmed.substring(match.first.length)
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

@@ -141,11 +141,17 @@ private fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
+            // On a real device, the original green-thumb-on-both-states pairing (GreenDim vs Green
+            // thumb, Panel vs PanelLight track - both dark, both green) read as visually identical at
+            // a glance, thumb position aside. Grey unchecked / green-tinted checked track reads
+            // clearly as off vs. on instead.
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Winamp.Green,
-                checkedTrackColor = Winamp.PanelLight,
-                uncheckedThumbColor = Winamp.GreenDim,
-                uncheckedTrackColor = Winamp.Panel,
+                checkedTrackColor = Winamp.GreenDim,
+                checkedBorderColor = Winamp.Green,
+                uncheckedThumbColor = Winamp.BevelLight,
+                uncheckedTrackColor = Winamp.Background,
+                uncheckedBorderColor = Winamp.BevelLight,
             ),
         )
     }
