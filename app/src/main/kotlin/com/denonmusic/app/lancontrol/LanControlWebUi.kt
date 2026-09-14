@@ -102,6 +102,22 @@ internal const val WEB_UI_HTML = """<!doctype html>
   .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
   .kv .k { color: var(--muted); }
   [hidden] { display: none !important; }
+  #toast {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    max-width: 528px;
+    background: var(--accent);
+    color: #0c1220;
+    font-weight: 600;
+    font-size: 14px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  }
+  #toast.err { background: var(--danger); }
+  button[disabled] { opacity: 0.6; cursor: default; }
 </style>
 </head>
 <body>
@@ -242,6 +258,8 @@ internal const val WEB_UI_HTML = """<!doctype html>
   </div>
 </div>
 
+<div id="toast" hidden></div>
+
 <script>
 (function () {
   var TOKEN_KEY = "lanControlToken";
@@ -286,6 +304,39 @@ internal const val WEB_UI_HTML = """<!doctype html>
 
   function postQuery(path, params) { return post(withQuery(path, params)); }
   function getQuery(path, params) { return api(withQuery(path, params)); }
+
+  // ---- busy feedback: some actions (playing/queuing a big folder) walk a whole SMB/HEOS subtree
+  // server-side and can take a while - without this they just look stuck. ----
+  var toastEl = document.getElementById("toast");
+  var busy = false;
+
+  function showToast(text, isError) {
+    toastEl.textContent = text;
+    toastEl.classList.toggle("err", !!isError);
+    toastEl.hidden = false;
+  }
+
+  function hideToast() { toastEl.hidden = true; }
+
+  /**
+   * Runs one slow action: disables [trigger] (if given) and shows [label] until it settles, ignores
+   * a second tap while one is already in flight, and turns a failure into a toast instead of a silent
+   * no-op (except an auth failure, which already shows its own gate screen).
+   */
+  function withBusy(trigger, label, promiseFactory) {
+    if (busy) return;
+    busy = true;
+    if (trigger) trigger.disabled = true;
+    showToast(label);
+    promiseFactory().then(function () {
+      hideToast();
+    }).catch(function (err) {
+      if (!err || err.message !== "unauthorized") showToast("Failed: " + ((err && err.message) || "request failed"), true);
+    }).then(function () {
+      busy = false;
+      if (trigger) trigger.disabled = false;
+    });
+  }
 
   function showGate(err) {
     gateErr.textContent = err || "";
@@ -487,11 +538,17 @@ internal const val WEB_UI_HTML = """<!doctype html>
   }
 
   function renderBrowseList(items, sid, cid) {
-    document.getElementById("browsePlayAllBtn").onclick = function () {
-      postQuery("/browse/playall", browseLevelParams(sid, cid, { criteria: "ReplaceAndPlay" })).then(function () { selectTab("now"); refreshStatus(); });
+    var playAllBtn = document.getElementById("browsePlayAllBtn");
+    playAllBtn.onclick = function () {
+      withBusy(playAllBtn, "Queuing folder…", function () {
+        return postQuery("/browse/playall", browseLevelParams(sid, cid, { criteria: "ReplaceAndPlay" })).then(function () { selectTab("now"); refreshStatus(); });
+      });
     };
-    document.getElementById("browseQueueAllBtn").onclick = function () {
-      postQuery("/browse/playall", browseLevelParams(sid, cid, { criteria: "AddToEnd" }));
+    var queueAllBtn = document.getElementById("browseQueueAllBtn");
+    queueAllBtn.onclick = function () {
+      withBusy(queueAllBtn, "Queuing folder…", function () {
+        return postQuery("/browse/playall", browseLevelParams(sid, cid, { criteria: "AddToEnd" }));
+      });
     };
     var el = document.getElementById("browseList");
     if (!items.length) { el.textContent = "Nothing here."; return; }
@@ -555,11 +612,19 @@ internal const val WEB_UI_HTML = """<!doctype html>
   }
 
   function renderFilesList(entries, path) {
-    document.getElementById("filesPlayAllBtn").onclick = function () {
-      postQuery("/smb/play", { path: path }).then(function () { selectTab("now"); refreshStatus(); });
+    var playAllBtn = document.getElementById("filesPlayAllBtn");
+    playAllBtn.onclick = function () {
+      // Recurses the whole folder server-side - can take a while in a big artist folder full of
+      // albums, so this always shows the busy toast rather than only on the biggest folders.
+      withBusy(playAllBtn, "Queuing folder…", function () {
+        return postQuery("/smb/play", { path: path }).then(function () { selectTab("now"); refreshStatus(); });
+      });
     };
-    document.getElementById("filesQueueAllBtn").onclick = function () {
-      postQuery("/smb/queue", { path: path });
+    var queueAllBtn = document.getElementById("filesQueueAllBtn");
+    queueAllBtn.onclick = function () {
+      withBusy(queueAllBtn, "Queuing folder…", function () {
+        return postQuery("/smb/queue", { path: path });
+      });
     };
     var el = document.getElementById("filesList");
     if (!entries.length) { el.textContent = "Empty folder."; return; }
@@ -578,7 +643,9 @@ internal const val WEB_UI_HTML = """<!doctype html>
         meta.onclick = function () { loadFiles(entry.path); };
       } else {
         meta.onclick = function () {
-          postQuery("/smb/play", { path: path, file: entry.path }).then(function () { selectTab("now"); refreshStatus(); });
+          withBusy(null, "Queuing…", function () {
+            return postQuery("/smb/play", { path: path, file: entry.path }).then(function () { selectTab("now"); refreshStatus(); });
+          });
         };
       }
       el.appendChild(row);
