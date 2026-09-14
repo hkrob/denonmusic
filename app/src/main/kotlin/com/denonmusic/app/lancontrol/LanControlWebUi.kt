@@ -321,18 +321,27 @@ internal const val WEB_UI_HTML = """<!doctype html>
   /**
    * Runs one slow action: disables [trigger] (if given) and shows [label] until it settles, ignores
    * a second tap while one is already in flight, and turns a failure into a toast instead of a silent
-   * no-op (except an auth failure, which already shows its own gate screen).
+   * no-op (except an auth failure, which already shows its own gate screen). While it's in flight,
+   * polls GET /progress and swaps the label for the server's own live status (e.g. "Scanning
+   * Prince/1989 - Batman…", "Queuing 42/6570…") - see LanControlManager's progress tracking, since a
+   * big folder's walk can take tens of seconds with nothing else to show for it.
    */
   function withBusy(trigger, label, promiseFactory) {
     if (busy) return;
     busy = true;
     if (trigger) trigger.disabled = true;
     showToast(label);
+    var progressTimer = setInterval(function () {
+      api("/progress").then(function (p) {
+        if (p.active) showToast(p.message || label);
+      }).catch(function () {});
+    }, 500);
     promiseFactory().then(function () {
       hideToast();
     }).catch(function (err) {
       if (!err || err.message !== "unauthorized") showToast("Failed: " + ((err && err.message) || "request failed"), true);
     }).then(function () {
+      clearInterval(progressTimer);
       busy = false;
       if (trigger) trigger.disabled = false;
     });

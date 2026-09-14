@@ -112,12 +112,18 @@ class SmbOverlay(private val credentials: SmbCredentials) {
      * level), which [listDirectory] alone can't reach since it only ever lists one level. Depth-first,
      * each level alphabetical, so disc order comes out right without relying on any naming
      * convention. Bounded by [MAX_RECURSE_DEPTH] against a pathological share layout.
+     *
+     * [onDirectoryScanned] fires once per [listDirectory] call (i.e. once per SMB round trip) with the
+     * path just scanned - a big artist folder full of albums can take tens of seconds, and this is the
+     * only granularity available to report progress against, since a whole subtree's file count isn't
+     * known up front. Defaulted to a no-op so every other caller is unaffected.
      */
-    fun listFilesRecursive(directoryPath: String, depth: Int = 0): List<SmbEntry> {
+    fun listFilesRecursive(directoryPath: String, depth: Int = 0, onDirectoryScanned: (String) -> Unit = {}): List<SmbEntry> {
         if (depth > MAX_RECURSE_DEPTH) return emptyList()
         val entries = listDirectory(directoryPath) ?: return emptyList()
+        onDirectoryScanned(directoryPath)
         val (folders, files) = entries.partition { it.isDirectory }
-        return files + folders.flatMap { listFilesRecursive(it.path, depth + 1) }
+        return files + folders.flatMap { listFilesRecursive(it.path, depth + 1, onDirectoryScanned) }
     }
 
     fun openStream(path: String): InputStream = SmbFile(smbUrl(path), context).inputStream

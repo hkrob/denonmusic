@@ -66,6 +66,15 @@ class LanControlManager @Inject constructor(
     private var cachedPid: String? = null
     private var cachedSid: String? = null
 
+    // Progress for whatever folder-wide play/queue walk (SMB or HEOS) is currently running, if any -
+    // polled by the web UI via GET /progress so a big folder's tens-of-seconds walk shows live
+    // feedback instead of looking stuck. @Volatile: written from whichever client thread is running
+    // the walk, read from whichever client thread is polling - see LanControlServer's thread-per-
+    // connection model.
+    @Volatile private var progressActive = false
+    @Volatile private var progressCount = 0
+    @Volatile private var progressMessage = ""
+
     private val _status = MutableStateFlow<LanControlStatus>(LanControlStatus.Off)
     val status: StateFlow<LanControlStatus> = _status.asStateFlow()
 
@@ -124,6 +133,7 @@ class LanControlManager @Inject constructor(
             "GET" to "/smb" -> smbListResponse(request)
             "POST" to "/smb/play" -> smbPlayResponse(request)
             "POST" to "/smb/queue" -> smbQueueResponse(request)
+            "GET" to "/progress" -> progressResponse()
             else -> heosHandle(request)
         }
     }
@@ -310,18 +320,29 @@ class LanControlManager @Inject constructor(
         val cid = request.query["cid"]
         val criteria = parseAddCriteria(request) ?: return badCriteria()
 
-        val targets = runCatching { collectQueueTargets(client, sid, cid) }.getOrElse { e ->
-            return LanControlResponse(500, """{"error":${jsonString(e.message ?: "couldn't gather tracks")}}""")
+        beginProgress("Scanning library…")
+        val targets = try {
+            runCatching { collectQueueTargets(client, sid, cid) }.getOrElse { e ->
+                return LanControlResponse(500, """{"error":${jsonString(e.message ?: "couldn't gather tracks")}}""")
+            }
+        } finally {
+            endProgress()
         }
         if (targets.isEmpty()) return LanControlResponse(404, """{"error":"nothing playable found"}""")
         if (targets.size > MAX_QUEUE_TARGETS) {
             return LanControlResponse(400, """{"error":"too many items to queue at once (limit $MAX_QUEUE_TARGETS) - open a smaller folder"}""")
         }
-        targets.forEachIndexed { index, target ->
-            // Only the first part carries the caller's chosen criteria; every part after it always
-            // appends, or a multi-part "replace and play" would replace the queue anew on each call.
-            val partCriteria = if (index == 0) criteria else AddCriteria.AddToEnd
-            client.addToQueue(pid = pid, sid = target.sid, cid = target.cid, mid = target.mid, criteria = partCriteria)
+        beginProgress("Queuing 0/${targets.size}…")
+        try {
+            targets.forEachIndexed { index, target ->
+                // Only the first part carries the caller's chosen criteria; every part after it always
+                // appends, or a multi-part "replace and play" would replace the queue anew on each call.
+                val partCriteria = if (index == 0) criteria else AddCriteria.AddToEnd
+                client.addToQueue(pid = pid, sid = target.sid, cid = target.cid, mid = target.mid, criteria = partCriteria)
+                bumpProgress("Queuing ${index + 1}/${targets.size}…")
+            }
+        } finally {
+            endProgress()
         }
         return LanControlResponse.ok("""{"ok":true,"queued":${targets.size}}""")
     }
@@ -336,6 +357,7 @@ class LanControlManager @Inject constructor(
             items += page.items
             isPlayable = isPlayable || page.isPlayableContainer
         }
+        bumpProgress("Scanning library…")
         val subContainers = items.filter { it.isContainer && it.sid == null && it.cid != null }
         if (subContainers.isEmpty()) {
             return if (isPlayable && cid != null) {
@@ -393,7 +415,7 @@ class LanControlManager @Inject constructor(
     private suspend fun smbPlayResponse(request: LanControlRequest): LanControlResponse {
         val overlay = smbOverlay() ?: return LanControlResponse(503, """{"error":"no SMB share configured"}""")
         val dir = request.query["path"].orEmpty()
-        val files = withContext(Dispatchers.IO) { runCatching { overlay.listFilesRecursive(dir) }.getOrDefault(emptyList()) }
+        val files = scanSmbFolder(overlay, dir)
         if (files.isEmpty()) return LanControlResponse(404, """{"error":"no playable files found"}""")
         val startFile = request.query["file"]
         val startIndex = startFile?.let { f -> files.indexOfFirst { it.path == f }.takeIf { it >= 0 } } ?: 0
@@ -405,13 +427,45 @@ class LanControlManager @Inject constructor(
     private suspend fun smbQueueResponse(request: LanControlRequest): LanControlResponse {
         val overlay = smbOverlay() ?: return LanControlResponse(503, """{"error":"no SMB share configured"}""")
         val dir = request.query["path"].orEmpty()
-        val files = withContext(Dispatchers.IO) { runCatching { overlay.listFilesRecursive(dir) }.getOrDefault(emptyList()) }
+        val files = scanSmbFolder(overlay, dir)
         if (files.isEmpty()) return LanControlResponse(404, """{"error":"no playable files found"}""")
         bridgeQueueController.addToQueue(files.map { it.path.toBridgeQueueItem() })
         return LanControlResponse.ok("""{"ok":true,"queued":${files.size}}""")
     }
 
+    /** Recursive SMB scan with live progress - see [progressResponse]; a big artist folder can take tens of seconds. */
+    private suspend fun scanSmbFolder(overlay: SmbOverlay, dir: String): List<SmbEntry> {
+        beginProgress("Scanning $dir…")
+        try {
+            return withContext(Dispatchers.IO) {
+                runCatching {
+                    overlay.listFilesRecursive(dir) { scannedPath -> bumpProgress("Scanning $scannedPath…") }
+                }.getOrDefault(emptyList())
+            }
+        } finally {
+            endProgress()
+        }
+    }
+
     private fun String.toBridgeQueueItem() = BridgeQueueItem(path = this, displayName = substringAfterLast('/'))
+
+    private fun beginProgress(message: String) {
+        progressCount = 0
+        progressMessage = message
+        progressActive = true
+    }
+
+    private fun bumpProgress(message: String) {
+        progressCount++
+        progressMessage = message
+    }
+
+    private fun endProgress() {
+        progressActive = false
+    }
+
+    private fun progressResponse(): LanControlResponse =
+        LanControlResponse.ok("""{"active":$progressActive,"count":$progressCount,"message":${jsonString(progressMessage)}}""")
 
     private suspend fun withIntParam(request: LanControlRequest, name: String, action: suspend (Int) -> Unit): LanControlResponse {
         val value = request.query[name]?.toIntOrNull()
