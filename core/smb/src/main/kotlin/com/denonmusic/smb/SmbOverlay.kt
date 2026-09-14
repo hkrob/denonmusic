@@ -84,9 +84,11 @@ class SmbOverlay(private val credentials: SmbCredentials) {
 
     /**
      * Lists [directoryPath] (empty string for the share root): subfolders first, then files whose
-     * extension one of the plan's format parsers actually recognises, both alphabetical. Filters out
-     * anything else (`.nfo`, artwork, playlists, ...) since this listing exists to pick something to
-     * play, not to be a general-purpose file manager.
+     * extension one of the plan's format parsers actually recognises, both in natural order (see
+     * [naturalOrderComparator] - a real 10-disc box set on the share this was verified against sorts
+     * as `Disc 1, Disc 10, Disc 2, ...` under a plain string sort, which would queue it in the wrong
+     * order via [listFilesRecursive]). Filters out anything else (`.nfo`, artwork, playlists, ...)
+     * since this listing exists to pick something to play, not to be a general-purpose file manager.
      */
     fun listDirectory(directoryPath: String): List<SmbEntry>? {
         val normalized = if (directoryPath.isEmpty() || directoryPath.endsWith("/")) directoryPath else "$directoryPath/"
@@ -96,11 +98,11 @@ class SmbOverlay(private val credentials: SmbCredentials) {
         val folderEntries = folders
             .filterNot { it.name.startsWith(".") }
             .map { SmbEntry(name = it.name.removeSuffix("/"), path = normalized + it.name.removeSuffix("/"), isDirectory = true) }
-            .sortedBy { it.name.lowercase() }
+            .sortedWith(compareBy(naturalOrderComparator) { it.name })
         val fileEntries = files
             .filter { isSupportedAudioFile(it.name) }
             .map { SmbEntry(name = it.name, path = normalized + it.name, isDirectory = false) }
-            .sortedBy { it.name.lowercase() }
+            .sortedWith(compareBy(naturalOrderComparator) { it.name })
         return folderEntries + fileEntries
     }
 
@@ -146,6 +148,40 @@ class SmbOverlay(private val credentials: SmbCredentials) {
         private val FOLDER_ART_NAMES = listOf("folder.jpg", "cover.jpg")
         private const val MAX_RECURSE_DEPTH = 6
     }
+}
+
+/**
+ * Case-insensitive natural-order comparator: digit runs compare by numeric value, not
+ * digit-by-digit, so `Disc 2` sorts before `Disc 10`. A plain string sort doesn't - verified against
+ * a real 10-disc box set on the share this project targets, where it produced `Disc 1, Disc 10, Disc
+ * 2, ..., Disc 9`.
+ */
+internal val naturalOrderComparator = Comparator<String> { a, b -> naturalCompare(a.lowercase(), b.lowercase()) }
+
+internal fun naturalCompare(a: String, b: String): Int {
+    var i = 0
+    var j = 0
+    while (i < a.length && j < b.length) {
+        val ca = a[i]
+        val cb = b[j]
+        if (ca.isDigit() && cb.isDigit()) {
+            var iEnd = i
+            while (iEnd < a.length && a[iEnd].isDigit()) iEnd++
+            var jEnd = j
+            while (jEnd < b.length && b[jEnd].isDigit()) jEnd++
+            val numA = a.substring(i, iEnd).trimStart('0').ifEmpty { "0" }
+            val numB = b.substring(j, jEnd).trimStart('0').ifEmpty { "0" }
+            val cmp = if (numA.length != numB.length) numA.length - numB.length else numA.compareTo(numB)
+            if (cmp != 0) return cmp
+            i = iEnd
+            j = jEnd
+        } else {
+            if (ca != cb) return ca.compareTo(cb)
+            i++
+            j++
+        }
+    }
+    return (a.length - i) - (b.length - j)
 }
 
 /** No dependency was pulled in just for this: a fixed byte ceiling on an [InputStream]. */
