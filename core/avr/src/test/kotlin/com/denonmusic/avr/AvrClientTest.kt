@@ -4,7 +4,9 @@ import kotlin.concurrent.thread
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -56,7 +58,11 @@ class AvrClientTest {
 
         client.selectInput("NET")
 
-        assertEquals(listOf("SINET"), server.received)
+        // send() is fire-and-forget: it returns once the client has written the bytes, not once the
+        // fake server's own reader thread has read and recorded them - asserting on server.received
+        // immediately is a race the client side usually wins locally but can lose under CI's heavier
+        // scheduling load. Wait for the line to actually land before checking it.
+        awaitReceived(listOf("SINET"))
     }
 
     @Test
@@ -67,7 +73,14 @@ class AvrClientTest {
 
         client.ensureOnAndSelected("NET")
 
-        assertEquals(listOf("PW?", "PWON", "ZMON", "SINET"), server.received)
+        // ZMON/SINET are fire-and-forget sends at the end of ensureOnAndSelected - see the note on
+        // the test above.
+        awaitReceived(listOf("PW?", "PWON", "ZMON", "SINET"))
+    }
+
+    /** Polls [FakeAvrServer.received] until it matches [expected], rather than racing its reader thread. */
+    private suspend fun awaitReceived(expected: List<String>) = withTimeout(2_000) {
+        while (server.received != expected) delay(10)
     }
 
     @Test
