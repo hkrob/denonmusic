@@ -154,6 +154,19 @@ class LanControlServerTest {
     }
 
     @Test
+    fun `GET slash serves the web UI without a token and never reaches the handler`() {
+        var handlerCalled = false
+        val s = startServer(handle = { handlerCalled = true; LanControlResponse.ok("{}") })
+
+        val response = request(s.port, "GET", "/", tokenHeader = null)
+
+        assertEquals(200, response.status)
+        assertEquals("text/html; charset=utf-8", response.headers["content-type"])
+        assertTrue(response.body.contains("<html"))
+        assertTrue(!handlerCalled)
+    }
+
+    @Test
     fun `server reports its bound port and running state`() {
         val s = startServer()
 

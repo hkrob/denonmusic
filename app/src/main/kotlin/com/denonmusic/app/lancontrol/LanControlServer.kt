@@ -81,12 +81,19 @@ class LanControlServer(
                 val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.US_ASCII))
                 val requestLine = reader.readLine() ?: return
                 val parsed = parseRequestLine(requestLine) ?: return respond(socket, LanControlResponse(400, """{"error":"bad request"}"""))
-                val headers = readHeaders(reader)
+                readHeaders(reader).let { headers ->
+                    // The page itself carries no secrets and can't know the token before the user
+                    // types it in, so it's served without auth - same as a login screen. Every API
+                    // call it makes is still gated below like any other client.
+                    if (parsed.method == "GET" && parsed.path == "/") {
+                        return respondHtml(socket, WEB_UI_HTML)
+                    }
 
-                val presented = headers["x-lan-control-token"] ?: parsed.query["token"]
-                val expected = authToken()
-                if (expected.isNullOrEmpty() || presented == null || !constantTimeEquals(presented, expected)) {
-                    return respond(socket, LanControlResponse(401, """{"error":"unauthorized"}"""))
+                    val presented = headers["x-lan-control-token"] ?: parsed.query["token"]
+                    val expected = authToken()
+                    if (expected.isNullOrEmpty() || presented == null || !constantTimeEquals(presented, expected)) {
+                        return respond(socket, LanControlResponse(401, """{"error":"unauthorized"}"""))
+                    }
                 }
 
                 val response = runCatching { handle(parsed) }
@@ -130,13 +137,17 @@ class LanControlServer(
         return headers
     }
 
-    private fun respond(socket: Socket, response: LanControlResponse) {
-        val bodyBytes = response.body.toByteArray(Charsets.UTF_8)
-        val statusText = statusText(response.status)
+    private fun respond(socket: Socket, response: LanControlResponse) =
+        writeResponse(socket, response.status, "application/json; charset=utf-8", response.body.toByteArray(Charsets.UTF_8))
+
+    private fun respondHtml(socket: Socket, html: String) =
+        writeResponse(socket, 200, "text/html; charset=utf-8", html.toByteArray(Charsets.UTF_8))
+
+    private fun writeResponse(socket: Socket, status: Int, contentType: String, bodyBytes: ByteArray) {
         val output = socket.getOutputStream()
         val headerLines = listOf(
-            "HTTP/1.1 ${response.status} $statusText",
-            "Content-Type: application/json; charset=utf-8",
+            "HTTP/1.1 $status ${statusText(status)}",
+            "Content-Type: $contentType",
             "Content-Length: ${bodyBytes.size}",
             "Connection: close",
         )
