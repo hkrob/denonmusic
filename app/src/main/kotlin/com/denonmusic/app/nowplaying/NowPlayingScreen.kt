@@ -39,14 +39,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.denonmusic.app.player.PlayerUiState
 import com.denonmusic.app.player.PlayerViewModel
-import com.denonmusic.app.player.TechnicalInfo
 import com.denonmusic.app.player.icon
 import com.denonmusic.app.player.next
+import com.denonmusic.app.player.summary
 import com.denonmusic.app.ui.LocalArtwork
 import com.denonmusic.app.ui.RemoteArtwork
 import com.denonmusic.app.ui.Winamp
 import com.denonmusic.app.ui.bevel
-import com.denonmusic.avr.SignalType
+import com.denonmusic.app.ui.fileTypeLabel
 import com.denonmusic.heos.PlayState
 import com.denonmusic.heos.RepeatMode
 import com.denonmusic.smb.AudioFormatInfo
@@ -121,8 +121,15 @@ fun NowPlayingScreen(playerViewModel: PlayerViewModel, onBack: () -> Unit) {
                 val subtitle = listOfNotNull(np?.artist?.takeIf { it.isNotBlank() }, np?.album?.takeIf { it.isNotBlank() })
                     .joinToString(" — ")
                 Text(subtitle.ifEmpty { "—" }, style = Winamp.labelStyle, modifier = Modifier.padding(top = 8.dp))
-                state.technicalInfo?.summary()?.let {
-                    Text(it, style = Winamp.smallStyle, modifier = Modifier.padding(top = 4.dp))
+                // fileTypeLabel is best-effort here: the HEOS-native SMB share reports the raw
+                // filename (extension included) as `song`, but a DLNA/Plex-tagged title never carries
+                // one - see [fileTypeLabel]'s own doc for why that's the right trade-off.
+                val technicalLine = listOfNotNull(
+                    np?.song?.let(::fileTypeLabel),
+                    state.technicalInfo?.summary(),
+                ).joinToString(" • ")
+                if (technicalLine.isNotEmpty()) {
+                    Text(technicalLine, style = Winamp.smallStyle, modifier = Modifier.padding(top = 4.dp))
                 }
             }
 
@@ -237,28 +244,6 @@ private fun Long.toClock(): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return String.format(Locale.US, "%d:%02d", minutes, seconds)
-}
-
-/**
- * e.g. "PCM 44.1 kHz • 6 ch active" for the native-HEOS technical line - read straight off the AVR's
- * telnet port rather than HEOS (which never reports format), so it works for any source, DLNA/Plex
- * included, not just the phase-6 bridge's own [AudioFormatInfo].
- */
-private fun TechnicalInfo.summary(): String? {
-    if (signalType == null && sampleRateKhz == null && activeOutputChannels == 0) return null
-    return buildString {
-        append(
-            when (signalType) {
-                SignalType.Pcm -> "PCM"
-                SignalType.Dsd -> "DSD"
-                SignalType.Analog -> "ANALOG"
-                SignalType.Unknown, null -> "SIGNAL"
-            },
-        )
-        sampleRateKhz?.let { append(" %.1f kHz".format(Locale.US, it)) }
-        if (activeOutputChannels > 0) append(" • $activeOutputChannels ch active")
-        if (isHiRes) append(" • HI-RES")
-    }
 }
 
 /**

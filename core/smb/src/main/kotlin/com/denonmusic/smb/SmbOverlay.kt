@@ -104,6 +104,20 @@ class SmbOverlay(private val credentials: SmbCredentials) {
         return folderEntries + fileEntries
     }
 
+    /**
+     * Every playable file under [directoryPath], walking into subfolders too - what a multi-disc
+     * album needs (an `Album` folder holding `CD1` and `CD2` subfolders, no tracks at the album's own
+     * level), which [listDirectory] alone can't reach since it only ever lists one level. Depth-first,
+     * each level alphabetical, so disc order comes out right without relying on any naming
+     * convention. Bounded by [MAX_RECURSE_DEPTH] against a pathological share layout.
+     */
+    fun listFilesRecursive(directoryPath: String, depth: Int = 0): List<SmbEntry> {
+        if (depth > MAX_RECURSE_DEPTH) return emptyList()
+        val entries = listDirectory(directoryPath) ?: return emptyList()
+        val (folders, files) = entries.partition { it.isDirectory }
+        return files + folders.flatMap { listFilesRecursive(it.path, depth + 1) }
+    }
+
     fun openStream(path: String): InputStream = SmbFile(smbUrl(path), context).inputStream
 
     /**
@@ -130,6 +144,7 @@ class SmbOverlay(private val credentials: SmbCredentials) {
         // variants, extra metadata atoms) - still a trivial read over a LAN SMB share.
         private const val HEADER_READ_LIMIT_BYTES = 512 * 1024
         private val FOLDER_ART_NAMES = listOf("folder.jpg", "cover.jpg")
+        private const val MAX_RECURSE_DEPTH = 6
     }
 }
 

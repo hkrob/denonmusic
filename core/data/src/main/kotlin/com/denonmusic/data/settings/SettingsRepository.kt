@@ -2,7 +2,9 @@ package com.denonmusic.data.settings
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
@@ -28,9 +30,18 @@ data class AppSettings(
     val smbPassword: String? = null,
     /** The SMB file browser's last folder, `/`-joined, so reopening it doesn't reset to the root. */
     val smbBrowsePath: String? = null,
+    /** Screen never sleeps while the app is in the foreground - useful mounted next to the AVR. */
+    val keepScreenOn: Boolean = false,
+    val autoDimEnabled: Boolean = false,
+    /** Idle time before the screen dims, once [autoDimEnabled]. */
+    val autoDimAfterSeconds: Int = DEFAULT_AUTO_DIM_AFTER_SECONDS,
+    /** Brightness to dim to, 1-100 - never 0, so the screen never goes fully black and unreadable. */
+    val autoDimBrightnessPercent: Int = DEFAULT_AUTO_DIM_BRIGHTNESS_PERCENT,
 ) {
     companion object {
         const val DEFAULT_AVR_INPUT_MNEMONIC: String = "NET"
+        const val DEFAULT_AUTO_DIM_AFTER_SECONDS: Int = 60
+        const val DEFAULT_AUTO_DIM_BRIGHTNESS_PERCENT: Int = 10
     }
 }
 
@@ -52,6 +63,10 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
             smbUsername = prefs[KEY_SMB_USERNAME],
             smbPassword = prefs[KEY_SMB_PASSWORD],
             smbBrowsePath = prefs[KEY_SMB_BROWSE_PATH],
+            keepScreenOn = prefs[KEY_KEEP_SCREEN_ON] ?: false,
+            autoDimEnabled = prefs[KEY_AUTO_DIM_ENABLED] ?: false,
+            autoDimAfterSeconds = prefs[KEY_AUTO_DIM_AFTER_SECONDS] ?: AppSettings.DEFAULT_AUTO_DIM_AFTER_SECONDS,
+            autoDimBrightnessPercent = prefs[KEY_AUTO_DIM_BRIGHTNESS_PERCENT] ?: AppSettings.DEFAULT_AUTO_DIM_BRIGHTNESS_PERCENT,
         )
     }
 
@@ -88,6 +103,18 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { it[KEY_SMB_BROWSE_PATH] = path }
     }
 
+    suspend fun setKeepScreenOn(enabled: Boolean) {
+        dataStore.edit { it[KEY_KEEP_SCREEN_ON] = enabled }
+    }
+
+    suspend fun setAutoDim(enabled: Boolean, afterSeconds: Int, brightnessPercent: Int) {
+        dataStore.edit {
+            it[KEY_AUTO_DIM_ENABLED] = enabled
+            it[KEY_AUTO_DIM_AFTER_SECONDS] = afterSeconds.coerceAtLeast(1)
+            it[KEY_AUTO_DIM_BRIGHTNESS_PERCENT] = brightnessPercent.coerceIn(1, 100)
+        }
+    }
+
     companion object {
         private val KEY_AVR_HOST = stringPreferencesKey("avr_host")
         private val KEY_SELECTED_SID = stringPreferencesKey("selected_source_sid")
@@ -99,6 +126,10 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         private val KEY_SMB_USERNAME = stringPreferencesKey("smb_username")
         private val KEY_SMB_PASSWORD = stringPreferencesKey("smb_password")
         private val KEY_SMB_BROWSE_PATH = stringPreferencesKey("smb_browse_path")
+        private val KEY_KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
+        private val KEY_AUTO_DIM_ENABLED = booleanPreferencesKey("auto_dim_enabled")
+        private val KEY_AUTO_DIM_AFTER_SECONDS = intPreferencesKey("auto_dim_after_seconds")
+        private val KEY_AUTO_DIM_BRIGHTNESS_PERCENT = intPreferencesKey("auto_dim_brightness_percent")
 
         const val PREFERENCES_NAME: String = "denonmusic_settings"
     }

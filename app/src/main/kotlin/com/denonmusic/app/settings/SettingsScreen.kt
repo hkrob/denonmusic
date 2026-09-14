@@ -2,6 +2,7 @@ package com.denonmusic.app.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -11,6 +12,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -22,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -38,6 +42,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var smbShare by remember { mutableStateOf("") }
     var smbUsername by remember { mutableStateOf("") }
     var smbPassword by remember { mutableStateOf("") }
+    var autoDimAfterSeconds by remember { mutableStateOf("") }
+    var autoDimBrightnessPercent by remember { mutableStateOf("") }
 
     LaunchedEffect(state) {
         avrHost = state.avrHost.orEmpty()
@@ -46,6 +52,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         smbShare = state.smbShare.orEmpty()
         smbUsername = state.smbUsername.orEmpty()
         smbPassword = state.smbPassword.orEmpty()
+        autoDimAfterSeconds = state.autoDimAfterSeconds.toString()
+        autoDimBrightnessPercent = state.autoDimBrightnessPercent.toString()
     }
 
     Scaffold(
@@ -89,8 +97,73 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 Text("SAVE SMB CREDENTIALS", style = Winamp.labelStyle, color = Winamp.Amber)
             }
 
+            SmbConnectionTester(viewModel)
             SmbTester(viewModel)
+
+            SectionLabel("DISPLAY", modifier = Modifier.padding(top = 24.dp))
+            SwitchRow(
+                label = "Keep screen on",
+                checked = state.keepScreenOn,
+                onCheckedChange = viewModel::setKeepScreenOn,
+            )
+
+            SwitchRow(
+                label = "Auto-dim when idle",
+                checked = state.autoDimEnabled,
+                onCheckedChange = {
+                    viewModel.setAutoDim(
+                        it,
+                        autoDimAfterSeconds.toIntOrNull() ?: state.autoDimAfterSeconds,
+                        autoDimBrightnessPercent.toIntOrNull() ?: state.autoDimBrightnessPercent,
+                    )
+                },
+            )
+            LabeledField("Dim after (seconds)", autoDimAfterSeconds, { autoDimAfterSeconds = it })
+            LabeledField("Dim to (% brightness, 1-100)", autoDimBrightnessPercent, { autoDimBrightnessPercent = it })
+            TextButton(onClick = {
+                val afterSeconds = autoDimAfterSeconds.toIntOrNull() ?: state.autoDimAfterSeconds
+                val brightness = autoDimBrightnessPercent.toIntOrNull() ?: state.autoDimBrightnessPercent
+                viewModel.setAutoDim(state.autoDimEnabled, afterSeconds, brightness)
+            }) {
+                Text("SAVE AUTO-DIM SETTINGS", style = Winamp.labelStyle, color = Winamp.Amber)
+            }
         }
+    }
+}
+
+@Composable
+private fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = Winamp.labelStyle, color = Winamp.Green, modifier = Modifier.weight(1f))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Winamp.Green,
+                checkedTrackColor = Winamp.PanelLight,
+                uncheckedThumbColor = Winamp.GreenDim,
+                uncheckedTrackColor = Winamp.Panel,
+            ),
+        )
+    }
+}
+
+/**
+ * "Can we actually log in and see the share" - complements [SmbTester] below, which needs a real
+ * file path and tests header parsing rather than connectivity. Lists the share root, so it works
+ * before you know any file path at all.
+ */
+@Composable
+private fun SmbConnectionTester(viewModel: SettingsViewModel) {
+    val result by viewModel.smbConnectionTestResult.collectAsState()
+    Column(modifier = Modifier.padding(top = 8.dp)) {
+        TextButton(onClick = viewModel::testSmbConnection) {
+            Text("TEST SMB CONNECTION", style = Winamp.labelStyle, color = Winamp.Amber)
+        }
+        result?.let { Text(it, style = Winamp.smallStyle, color = Winamp.Green) }
     }
 }
 

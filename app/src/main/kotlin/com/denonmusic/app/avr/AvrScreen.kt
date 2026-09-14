@@ -31,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.denonmusic.app.player.TechnicalInfo
+import com.denonmusic.app.player.summary
 import com.denonmusic.app.ui.Winamp
 import com.denonmusic.app.ui.bevel
 import com.denonmusic.avr.BitPerfectPolicy
@@ -125,23 +127,27 @@ fun AvrScreen(viewModel: AvrViewModel = hiltViewModel()) {
             val active = state.outputChannels.map { it.code }.toSet()
             // A plain chunked grid, not LazyVerticalGrid: nine tiles never need laziness, and a lazy
             // grid can't be nested inside this screen's own verticalScroll (it measures its scroll
-            // axis with an infinite constraint, which a lazy layout can't size against).
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+            // axis with an infinite constraint, which a lazy layout can't size against). Kept small -
+            // this is a status glance, not the focal point of the screen.
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(top = 4.dp).fillMaxWidth(0.6f),
+            ) {
                 ALL_CHANNELS.chunked(3).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
                         row.forEach { code ->
                             val isActive = code in active
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .aspectRatio(1.6f)
+                                    .aspectRatio(2.2f)
                                     .background(if (isActive) Winamp.Green else Winamp.Panel)
                                     .bevel(),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
                                     code,
-                                    style = Winamp.labelStyle,
+                                    style = Winamp.smallStyle,
                                     color = if (isActive) Winamp.Background else Winamp.GreenDim,
                                 )
                             }
@@ -150,10 +156,17 @@ fun AvrScreen(viewModel: AvrViewModel = hiltViewModel()) {
                 }
             }
 
-            state.signalType?.let { signal ->
+            // Same [TechnicalInfo.summary] the Now Playing technical line renders, built from this
+            // screen's own already-live signal/sample-rate/output-channel state, so the two never show
+            // different detail for the same receiver.
+            val technicalInfo = TechnicalInfo(
+                signalType = state.signalType,
+                sampleRateKhz = state.sampleRateKhz,
+                activeOutputChannels = state.outputChannels.size,
+            )
+            technicalInfo.summary()?.let { summary ->
                 SectionLabel("SIGNAL", modifier = Modifier.padding(top = 16.dp))
-                val rate = state.sampleRateKhz?.let { " @ ${it} kHz" }.orEmpty()
-                Text("${signal.name.uppercase()}$rate", style = Winamp.labelStyle, color = Winamp.Green)
+                Text(summary, style = Winamp.labelStyle, color = Winamp.Green)
             }
         }
     }

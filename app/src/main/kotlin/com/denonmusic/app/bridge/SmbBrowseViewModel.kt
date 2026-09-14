@@ -87,6 +87,21 @@ class SmbBrowseViewModel @Inject constructor(
 
     fun refresh() = load(_uiState.value.pathSegments)
 
+    /**
+     * Every file under the current folder, subfolders included - what "play all"/"add all" reach for
+     * instead of [SmbBrowseUiState.entries]'s single level, so a multi-disc album (`CD1/`, `CD2/`
+     * subfolders, no files at the album's own level) queues in one tap. Computed on demand rather
+     * than kept in [uiState]: it walks the whole subtree, which is wasted work on every navigation if
+     * the user never taps play.
+     */
+    suspend fun filesRecursive(): List<SmbEntry> {
+        val activeOverlay = overlay ?: return emptyList()
+        val path = _uiState.value.currentPath
+        return withContext(Dispatchers.IO) {
+            runCatching { activeOverlay.listFilesRecursive(path) }.getOrDefault(emptyList())
+        }
+    }
+
     private fun load(segments: List<String>) {
         val activeOverlay = overlay ?: return
         viewModelScope.launch {

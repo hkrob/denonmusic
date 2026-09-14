@@ -6,6 +6,9 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,7 +16,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
@@ -41,6 +43,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,10 +53,12 @@ import com.denonmusic.app.bridge.SmbBrowseViewModel
 import com.denonmusic.app.heos.HeosConnectionState
 import com.denonmusic.app.ui.Winamp
 import com.denonmusic.app.ui.bevel
+import com.denonmusic.app.ui.fileTypeLabel
 import com.denonmusic.heos.BrowseItem
 import com.denonmusic.smb.SmbEntry
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun BrowseScreen(viewModel: BrowseViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
@@ -77,7 +82,7 @@ fun BrowseScreen(viewModel: BrowseViewModel = hiltViewModel()) {
                     actionIconContentColor = Winamp.Green,
                 ),
                 actions = {
-                    if (state.isPlayableContainer) {
+                    if (state.items.isNotEmpty()) {
                         var expanded by remember { mutableStateOf(false) }
                         Box {
                             IconButton(onClick = { expanded = true }) {
@@ -113,7 +118,7 @@ fun BrowseScreen(viewModel: BrowseViewModel = hiltViewModel()) {
             // Mirrors the SMB browser's own "PLAY ALL IN FOLDER" / "ADD FOLDER TO QUEUE" buttons -
             // the equivalent top-bar icon existed but was easy to miss, so the same action gets a
             // visible label here too for the native HEOS-indexed path.
-            if (state.isPlayableContainer) {
+            if (state.items.isNotEmpty()) {
                 Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                     TextButton(onClick = { viewModel.playAllCurrentContainer(QueueAction.ReplaceAndPlay) }) {
                         Text("PLAY ALL", style = Winamp.smallStyle, color = Winamp.Amber)
@@ -214,23 +219,40 @@ private fun ConnectionBanner(state: HeosConnectionState) {
     }
 }
 
+/**
+ * Well-known source names that read fine abbreviated and otherwise eat a disproportionate share of
+ * the breadcrumb's width every time they show up (they're the top-level source name, so they appear
+ * in *every* breadcrumb below them).
+ */
+private val BREADCRUMB_ABBREVIATIONS = mapOf(
+    "plex media server" to "Plex",
+)
+
+private fun breadcrumbLabel(name: String): String =
+    BREADCRUMB_ABBREVIATIONS[name.trim().lowercase()] ?: name
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Breadcrumb(names: List<String>, onClick: (Int) -> Unit) {
-    LazyRow(
-        modifier = Modifier.fillMaxWidth().background(Winamp.Panel).bevel().padding(horizontal = 8.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    // FlowRow instead of a LazyRow: a deep stack (source > artist > album > disc) can easily outrun
+    // screen width, and wrapping to a second line beats forcing a horizontal scroll to see where you
+    // are.
+    FlowRow(
+        modifier = Modifier.fillMaxWidth().background(Winamp.Panel).bevel().padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        items(names.withIndex().toList()) { (index, name) ->
-            Row {
-                TextButton(onClick = { onClick(index) }) {
-                    Text(name.uppercase(), style = Winamp.labelStyle, color = Winamp.Green)
+        names.forEachIndexed { index, name ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { onClick(index) }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
+                    Text(breadcrumbLabel(name).uppercase(), style = Winamp.smallStyle, color = Winamp.Green)
                 }
                 if (index != names.lastIndex) {
                     Icon(
                         Icons.Filled.ChevronRight,
                         contentDescription = null,
                         tint = Winamp.GreenDim,
-                        modifier = Modifier.align(Alignment.CenterVertically),
+                        modifier = Modifier.size(14.dp),
                     )
                 }
             }
@@ -259,7 +281,16 @@ private fun BrowseRow(item: BrowseItem, onOpen: () -> Unit, onAction: (QueueActi
                 tint = if (item.isContainer) Winamp.Amber else Winamp.Green,
             )
             Column(modifier = Modifier.padding(start = 12.dp)) {
-                Text(item.name, style = Winamp.labelStyle, color = Winamp.Green)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(item.name, style = Winamp.labelStyle, color = Winamp.Green)
+                    // Best-effort: only the HEOS-native SMB share's own track names carry a real
+                    // extension - a DLNA/Plex-tagged title never does. See fileTypeLabel's own doc.
+                    if (item.isTrack) {
+                        fileTypeLabel(item.name)?.let {
+                            Text(it, style = Winamp.smallStyle, color = Winamp.GreenDim, modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
+                }
                 val subtitle = listOfNotNull(item.artist, item.album).joinToString(" — ")
                 if (subtitle.isNotEmpty()) Text(subtitle, style = Winamp.smallStyle)
             }
@@ -347,6 +378,7 @@ private fun BridgeModeTester(
 }
 
 /** Breadcrumb + a bounded-height folder listing, so tapping through the SMB share doesn't need a typed path. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SmbFileBrowser(
     viewModel: SmbBrowseViewModel,
@@ -355,6 +387,7 @@ private fun SmbFileBrowser(
 ) {
     val state by viewModel.uiState.collectAsState()
     val files = state.entries.filter { !it.isDirectory }
+    val scope = rememberCoroutineScope()
 
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         when (state.hasCredentials) {
@@ -364,32 +397,48 @@ private fun SmbFileBrowser(
             }
             true -> {
                 val crumbs = listOf("ROOT") + state.pathSegments
-                LazyRow(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth().background(Winamp.Panel).bevel().padding(horizontal = 8.dp, vertical = 2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    items(crumbs.withIndex().toList()) { (index, name) ->
-                        Row {
-                            TextButton(onClick = { viewModel.goToBreadcrumb(index - 1) }) {
-                                Text(name.uppercase(), style = Winamp.smallStyle, color = Winamp.Green)
+                    crumbs.forEachIndexed { index, name ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(
+                                onClick = { viewModel.goToBreadcrumb(index - 1) },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                            ) {
+                                Text(breadcrumbLabel(name).uppercase(), style = Winamp.smallStyle, color = Winamp.Green)
                             }
                             if (index != crumbs.lastIndex) {
                                 Icon(
                                     Icons.Filled.ChevronRight,
                                     contentDescription = null,
                                     tint = Winamp.GreenDim,
-                                    modifier = Modifier.align(Alignment.CenterVertically).size(16.dp),
+                                    modifier = Modifier.size(14.dp),
                                 )
                             }
                         }
                     }
                 }
-                if (files.isNotEmpty()) {
+                if (state.entries.isNotEmpty()) {
+                    // Reaches into subfolders (a multi-disc album's CD1/CD2, say), not just this
+                    // level - see SmbBrowseViewModel.filesRecursive. That also covers the plain,
+                    // single-level case, so one pair of buttons is enough.
                     Row(modifier = Modifier.padding(top = 4.dp)) {
-                        TextButton(onClick = { onPlayFolder(files.map { it.path }, 0) }) {
+                        TextButton(onClick = {
+                            scope.launch {
+                                val all = viewModel.filesRecursive()
+                                if (all.isNotEmpty()) onPlayFolder(all.map { it.path }, 0)
+                            }
+                        }) {
                             Text("PLAY ALL IN FOLDER", style = Winamp.smallStyle, color = Winamp.Amber)
                         }
-                        TextButton(onClick = { onAddToQueue(files.map { it.path }) }) {
+                        TextButton(onClick = {
+                            scope.launch {
+                                val all = viewModel.filesRecursive()
+                                if (all.isNotEmpty()) onAddToQueue(all.map { it.path })
+                            }
+                        }) {
                             Text("ADD FOLDER TO QUEUE", style = Winamp.smallStyle, color = Winamp.Amber)
                         }
                     }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
@@ -127,6 +128,7 @@ fun QueueScreen(playerViewModel: PlayerViewModel) {
                 itemsIndexed(state.queue) { index, item ->
                     QueueRow(
                         item = item,
+                        isCurrent = item.qid == state.nowPlaying?.qid,
                         onTap = { playerViewModel.playQueueItem(item.qid) },
                         onRemove = { playerViewModel.removeFromQueue(item.qid) },
                         onMoveUp = { if (index > 0) playerViewModel.moveQueueItem(item.qid, state.queue[index - 1].qid) },
@@ -158,6 +160,7 @@ fun QueueScreen(playerViewModel: PlayerViewModel) {
 @Composable
 private fun QueueRow(
     item: QueueItem,
+    isCurrent: Boolean,
     onTap: () -> Unit,
     onRemove: () -> Unit,
     onMoveUp: () -> Unit,
@@ -192,18 +195,27 @@ private fun QueueRow(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Winamp.Background)
+                    .background(if (isCurrent) Winamp.PanelLight else Winamp.Background)
                     .combinedClickable(onClick = onTap, onLongClick = { menuExpanded = true })
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Filled.MusicNote, contentDescription = null, tint = Winamp.Green)
-                Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
-                    Text(item.song, style = Winamp.labelStyle, color = Winamp.Green)
+                Icon(
+                    Icons.Filled.MusicNote,
+                    contentDescription = if (isCurrent) "Now playing" else null,
+                    tint = if (isCurrent) Winamp.Green else Winamp.GreenDim,
+                    modifier = Modifier.size(18.dp),
+                )
+                Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+                    Text(
+                        item.song,
+                        style = Winamp.smallStyle,
+                        color = if (isCurrent) Winamp.Green else Winamp.GreenDim,
+                    )
                     val subtitle = listOf(item.artist, item.album).filter { it.isNotBlank() }.joinToString(" — ")
                     if (subtitle.isNotEmpty()) Text(subtitle, style = Winamp.smallStyle)
                 }
-                IconButton(onClick = { menuExpanded = true }) {
+                IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(28.dp)) {
                     Text("⋮", style = Winamp.labelStyle, color = Winamp.GreenDim)
                 }
             }
@@ -262,19 +274,20 @@ private fun BridgeQueueRow(item: BridgeQueueItem, isCurrent: Boolean, onTap: () 
                 .fillMaxWidth()
                 .background(if (isCurrent) Winamp.PanelLight else Winamp.Background)
                 .clickable(onClick = onTap)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 Icons.Filled.MusicNote,
-                contentDescription = null,
+                contentDescription = if (isCurrent) "Now playing" else null,
                 tint = if (isCurrent) Winamp.Green else Winamp.GreenDim,
+                modifier = Modifier.size(18.dp),
             )
             Text(
                 item.displayName,
-                style = Winamp.labelStyle,
+                style = Winamp.smallStyle,
                 color = if (isCurrent) Winamp.Green else Winamp.GreenDim,
-                modifier = Modifier.padding(start = 12.dp),
+                modifier = Modifier.padding(start = 10.dp),
             )
         }
     }

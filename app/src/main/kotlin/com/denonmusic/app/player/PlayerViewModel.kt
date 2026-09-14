@@ -47,6 +47,28 @@ data class TechnicalInfo(
         get() = signalType == SignalType.Dsd || (signalType == SignalType.Pcm && (sampleRateKhz ?: 0.0) >= 48.0)
 }
 
+/**
+ * e.g. "PCM 44.1 kHz • 6 ch active" - shared by the Now Playing technical line and the AVR tab's own
+ * SIGNAL section so the two never drift into showing different detail for the same live receiver
+ * state.
+ */
+fun TechnicalInfo.summary(): String? {
+    if (signalType == null && sampleRateKhz == null && activeOutputChannels == 0) return null
+    return buildString {
+        append(
+            when (signalType) {
+                SignalType.Pcm -> "PCM"
+                SignalType.Dsd -> "DSD"
+                SignalType.Analog -> "ANALOG"
+                SignalType.Unknown, null -> "SIGNAL"
+            },
+        )
+        sampleRateKhz?.let { append(" %.1f kHz".format(java.util.Locale.US, it)) }
+        if (activeOutputChannels > 0) append(" • $activeOutputChannels ch active")
+        if (isHiRes) append(" • HI-RES")
+    }
+}
+
 data class PlayerUiState(
     val pid: String? = null,
     val nowPlaying: NowPlaying? = null,
