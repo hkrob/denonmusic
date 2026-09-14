@@ -91,20 +91,17 @@ The endpoint whose value tracks the speaker tiles is the one to wire up.
 Sweeps capture your receiver's configuration, so `tools/sweeps/` is gitignored. Check a sweep before
 attaching it to an issue.
 
-## Release signing
+## Releases and in-app updates
 
-The keystore is never committed. Generate one:
+Versioned releases are published to GitHub Releases and the app checks there for updates itself
+(About tab) - see `.github/workflows/README-release.md` for the full one-time signing setup and
+`publish-release.ps1` for the one-command local publish path. Briefly: bump `versionCode`/
+`versionName` in `app/build.gradle.kts`, add a changelog entry in `AboutScreen.kt`, then either run
+the **Release** GitHub Action or `pwsh ./publish-release.ps1`.
 
-```sh
-keytool -genkeypair -v -keystore release.jks -keyalg RSA -keysize 2048 \
-        -validity 10000 -alias denonmusic
-base64 -w0 release.jks          # macOS: base64 release.jks | tr -d '\n'
-```
-
-Add four repository secrets: `KEYSTORE_B64` (the base64 above), `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
-`KEY_PASSWORD`. Pushing a `v*` tag then builds a signed APK and attaches it to a GitHub release.
-Keep `release.jks` somewhere safe and out of the repository - losing it means a new application
-identity.
+The keystore is never committed (`*.keystore`/`*.jks` are gitignored) and lives only as encrypted
+repository secrets during a build - see the linked doc before the first release, since it needs a
+one-time keystore + secrets setup that doesn't exist yet.
 
 ## Status
 

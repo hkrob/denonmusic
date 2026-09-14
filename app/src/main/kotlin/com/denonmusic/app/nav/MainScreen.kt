@@ -23,6 +23,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.denonmusic.app.about.AboutScreen
 import com.denonmusic.app.avr.AvrScreen
 import com.denonmusic.app.browse.BrowseScreen
 import com.denonmusic.app.nowplaying.NowPlayingScreen
@@ -37,6 +38,7 @@ private enum class MainTab(val route: String, val label: String) {
     Queue("queue", "QUEUE"),
     Avr("avr", "AVR"),
     Settings("settings", "SETTINGS"),
+    About("about", "ABOUT"),
 }
 
 private const val NOW_PLAYING_ROUTE = "nowplaying"
@@ -98,6 +100,7 @@ fun MainScreen() {
                 composable(MainTab.Queue.route) { QueueScreen(playerViewModel = playerViewModel) }
                 composable(MainTab.Avr.route) { AvrScreen() }
                 composable(MainTab.Settings.route) { SettingsScreen() }
+                composable(MainTab.About.route) { AboutScreen() }
                 composable(NOW_PLAYING_ROUTE) {
                     NowPlayingScreen(playerViewModel = playerViewModel, onBack = { navController.popBackStack() })
                 }

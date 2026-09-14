@@ -15,6 +15,7 @@ datastore = "1.1.1"
 ksp = "2.1.0-1.0.29"
 coreKtx = "1.15.0"
 jcifsNg = "2.1.10"
+work = "2.10.0"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -49,6 +50,8 @@ androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref =
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 
 jcifs-ng = { module = "eu.agno3.jcifs:jcifs-ng", version.ref = "jcifsNg" }
+
+androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

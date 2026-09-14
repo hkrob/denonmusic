@@ -1,3 +1,7 @@
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,6 +9,15 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
+}
+
+// Absent until a keystore is generated for this project - see .github/workflows/README-release.md.
+// Release builds are unsigned (and thus un-installable as an update) until it exists.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) {
+        file.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -17,11 +30,39 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        buildConfigField(
+            "String",
+            "BUILD_DATE",
+            "\"${SimpleDateFormat("d MMM yyyy, HH:mm").format(Date())}\"",
+        )
+    }
+
+    signingConfigs {
+        if (keystoreProperties.isNotEmpty()) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            // Its own applicationId so a debug build installs alongside a signed release rather than
+            // being rejected as a same-package update signed with a different key (see
+            // .github/workflows/README-release.md) - the same guard denonmusic's own sibling project
+            // (hkrob/bp) needed after hitting exactly that on a real device.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = false
+            if (keystoreProperties.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -35,6 +76,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {
@@ -75,6 +117,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.work.runtime.ktx)
 
     testImplementation(kotlin("test"))
     testImplementation(libs.junit.jupiter)
