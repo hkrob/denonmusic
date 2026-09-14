@@ -26,7 +26,7 @@ env:
   # is not a secret - it is the guard that stops a differently-signed APK going out, which Android
   # would refuse to install over an existing install. PLACEHOLDER until a keystore exists - see
   # .github/workflows/README-release.md, step "Pin the signing certificate fingerprint".
-  EXPECTED_SIGNER: "REPLACE_ME_AFTER_FIRST_KEYSTORE_SETUP"
+  EXPECTED_SIGNER: "7c50709e598856a9a80a75afff9dfb60f1b8d4f682e7ee2bef036bafa79ed8ea"
 
 jobs:
   release:

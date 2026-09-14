@@ -29,9 +29,9 @@ $Root = $PSScriptRoot
 $Repo = 'hkrob/denonmusic'
 # This repo's default branch as of writing - update if it's ever renamed (e.g. to 'main').
 $ReleaseBranch = 'claude/android-smb-denon-player-9710bx'
-# Public fingerprint of release.keystore — published in every APK, so safe to keep here. Update
-# this after pinning it in .github/workflows/release.yml (see README-release.md, step 2).
-$ExpectedSigner = 'REPLACE_ME_AFTER_FIRST_KEYSTORE_SETUP'
+# Public fingerprint of release.keystore — published in every APK, so safe to keep here. Matches
+# EXPECTED_SIGNER in .github/workflows/release.yml.
+$ExpectedSigner = '7c50709e598856a9a80a75afff9dfb60f1b8d4f682e7ee2bef036bafa79ed8ea'
 
 function Step([string]$Message) { Write-Host "==> $Message" -ForegroundColor Cyan }
 function Note([string]$Message) { Write-Host "    $Message" -ForegroundColor DarkGray }

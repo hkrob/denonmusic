@@ -27,9 +27,13 @@ keyPassword=...
 
 ### 2. Pin the signing certificate fingerprint
 
+Already done for the current keystore: `EXPECTED_SIGNER` in `.github/workflows/release.yml` and
+`$ExpectedSigner` in `publish-release.ps1` are both set to
+`7c50709e598856a9a80a75afff9dfb60f1b8d4f682e7ee2bef036bafa79ed8ea`. Re-do this step only if the
+key is ever rotated.
+
 `release.yml` refuses to trust an APK signed with any key but the one you intend - print the
-fingerprint once and hardcode it as `EXPECTED_SIGNER` in `.github/workflows/release.yml`
-(replacing the `REPLACE_ME_AFTER_FIRST_KEYSTORE_SETUP` placeholder):
+fingerprint once and hardcode it as `EXPECTED_SIGNER` in `.github/workflows/release.yml`:
 
 ```powershell
 keytool -exportcert -alias denonmusic -keystore release.keystore -storepass <storePassword> |
