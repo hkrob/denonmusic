@@ -1,6 +1,7 @@
 package com.denonmusic.app.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.denonmusic.app.lancontrol.LanControlStatus
 import com.denonmusic.app.ui.Winamp
+import com.denonmusic.avr.DiscoveredAvr
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,6 +90,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }) {
                 Text("SAVE RECEIVER SETTINGS", style = Winamp.labelStyle, color = Winamp.Amber)
             }
+            AvrDiscoverySection(viewModel)
 
             SectionLabel("SMB SHARE (for technical detail + artwork overlay)", modifier = Modifier.padding(top = 24.dp))
             LabeledField("Host", smbHost, { smbHost = it })
@@ -148,6 +151,48 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 Text("SAVE LAN CONTROL SETTINGS", style = Winamp.labelStyle, color = Winamp.Amber)
             }
             LanControlStatusRow(viewModel)
+        }
+    }
+}
+
+/**
+ * SSDP M-SEARCH for the receiver on the LAN - manual entry into the field above stays the fallback
+ * for a receiver that doesn't answer (different subnet, SSDP blocked by the router, etc).
+ */
+@Composable
+private fun AvrDiscoverySection(viewModel: SettingsViewModel) {
+    val state by viewModel.avrDiscovery.collectAsState()
+
+    Column(modifier = Modifier.padding(top = 4.dp)) {
+        TextButton(
+            onClick = viewModel::discoverAvr,
+            enabled = state !is AvrDiscoveryUiState.Searching,
+        ) {
+            Text("DISCOVER ON LAN", style = Winamp.labelStyle, color = Winamp.Amber)
+        }
+        when (val s = state) {
+            is AvrDiscoveryUiState.Searching -> Text("Searching...", style = Winamp.smallStyle)
+            is AvrDiscoveryUiState.NotFound -> Text(
+                "No receiver answered - enter the IP manually above.",
+                style = Winamp.smallStyle,
+            )
+            is AvrDiscoveryUiState.Found -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                s.results.forEach { found ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(found.host, style = Winamp.labelStyle, color = Winamp.Green)
+                            Text(found.label, style = Winamp.smallStyle)
+                        }
+                        TextButton(onClick = { viewModel.useDiscoveredAvr(found.host) }) {
+                            Text("USE", style = Winamp.labelStyle, color = Winamp.Amber)
+                        }
+                    }
+                }
+            }
+            is AvrDiscoveryUiState.Idle -> {}
         }
     }
 }

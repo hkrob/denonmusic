@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 data class AppSettings(
-    /** Manual override; SSDP discovery is not wired up yet, so this is the only way in for now. */
+    /** Set manually, or from a pick in Settings' SSDP LAN discovery (see `:core:avr`'s SsdpDiscovery). */
     val avrHost: String? = null,
     /** The music source the browse screen and queue actions latch onto once auto-detected. */
     val selectedSourceSid: String? = null,

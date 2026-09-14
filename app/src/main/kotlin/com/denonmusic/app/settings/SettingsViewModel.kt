@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.denonmusic.app.lancontrol.LanControlManager
 import com.denonmusic.app.lancontrol.LanControlStatus
 import com.denonmusic.app.media.MediaInfoRepository
+import com.denonmusic.avr.DiscoveredAvr
+import com.denonmusic.avr.SsdpDiscovery
 import com.denonmusic.data.settings.AppSettings
 import com.denonmusic.data.settings.SettingsRepository
 import com.denonmusic.smb.SmbCredentials
@@ -17,6 +19,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+sealed interface AvrDiscoveryUiState {
+    data object Idle : AvrDiscoveryUiState
+    data object Searching : AvrDiscoveryUiState
+    data class Found(val results: List<DiscoveredAvr>) : AvrDiscoveryUiState
+    data object NotFound : AvrDiscoveryUiState
+}
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -36,6 +45,9 @@ class SettingsViewModel @Inject constructor(
 
     val lanControlStatus: StateFlow<LanControlStatus> = lanControlManager.status
 
+    private val _avrDiscovery = MutableStateFlow<AvrDiscoveryUiState>(AvrDiscoveryUiState.Idle)
+    val avrDiscovery: StateFlow<AvrDiscoveryUiState> = _avrDiscovery.asStateFlow()
+
     init {
         // Idempotent - PlayerViewModel is the primary place this gets kicked off, but Settings
         // shouldn't depend on load order to show accurate LAN control status.
@@ -46,6 +58,28 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setAvrHost(host: String) = viewModelScope.launch { settings.setAvrHost(host) }
+
+    /**
+     * SSDP M-SEARCH for the receiver, per the plan - manual entry ([setAvrHost]) remains the fallback
+     * for a receiver that doesn't answer (different subnet, SSDP blocked, etc).
+     */
+    fun discoverAvr() {
+        viewModelScope.launch {
+            _avrDiscovery.value = AvrDiscoveryUiState.Searching
+            val results = withContext(Dispatchers.IO) { runCatching { SsdpDiscovery.discover() }.getOrDefault(emptyList()) }
+            _avrDiscovery.value = if (results.isEmpty()) AvrDiscoveryUiState.NotFound else AvrDiscoveryUiState.Found(results)
+        }
+    }
+
+    /** Picking a discovered device is just filling in the same field manual entry would. */
+    fun useDiscoveredAvr(host: String) {
+        setAvrHost(host)
+        _avrDiscovery.value = AvrDiscoveryUiState.Idle
+    }
+
+    fun dismissAvrDiscovery() {
+        _avrDiscovery.value = AvrDiscoveryUiState.Idle
+    }
 
     fun setAvrInputMnemonic(mnemonic: String) = viewModelScope.launch { settings.setAvrInputMnemonic(mnemonic) }
 
