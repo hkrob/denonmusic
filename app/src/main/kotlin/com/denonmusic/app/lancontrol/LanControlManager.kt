@@ -1,12 +1,22 @@
 package com.denonmusic.app.lancontrol
 
 import com.denonmusic.app.avr.AvrSession
+import com.denonmusic.app.bridge.BridgeQueueController
+import com.denonmusic.app.bridge.BridgeQueueItem
+import com.denonmusic.app.browse.SourceRepository
 import com.denonmusic.app.heos.HeosSession
+import com.denonmusic.app.media.MediaInfoRepository
+import com.denonmusic.avr.BitPerfectPolicy
 import com.denonmusic.avr.SoundMode
 import com.denonmusic.data.settings.SettingsRepository
+import com.denonmusic.heos.AddCriteria
+import com.denonmusic.heos.BrowseItem
 import com.denonmusic.heos.HeosClient
 import com.denonmusic.heos.PlayState
 import com.denonmusic.heos.QueueItem
+import com.denonmusic.smb.SmbCredentials
+import com.denonmusic.smb.SmbEntry
+import com.denonmusic.smb.SmbOverlay
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import javax.inject.Inject
@@ -17,10 +27,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 sealed interface LanControlStatus {
     data object Off : LanControlStatus
@@ -44,11 +56,15 @@ class LanControlManager @Inject constructor(
     private val heosSession: HeosSession,
     private val avrSession: AvrSession,
     private val settings: SettingsRepository,
+    private val sourceRepository: SourceRepository,
+    private val mediaInfoRepository: MediaInfoRepository,
+    private val bridgeQueueController: BridgeQueueController,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var started = false
     private var server: LanControlServer? = null
     private var cachedPid: String? = null
+    private var cachedSid: String? = null
 
     private val _status = MutableStateFlow<LanControlStatus>(LanControlStatus.Off)
     val status: StateFlow<LanControlStatus> = _status.asStateFlow()
@@ -102,11 +118,22 @@ class LanControlManager @Inject constructor(
     private fun currentPassword(): String? = runBlocking { settings.settings.first().lanControlPassword }
 
     private fun handle(request: LanControlRequest): LanControlResponse = runBlocking {
-        val client = heosSession.heosClient
-            ?: return@runBlocking LanControlResponse(503, """{"error":"HEOS not connected"}""")
-        val pid = resolvePid(client) ?: return@runBlocking LanControlResponse(503, """{"error":"no player found"}""")
-
         when (request.method to request.path) {
+            // The SMB fallback browser talks straight to the share, independent of HEOS/AVR -
+            // dispatched before the HEOS gate below so it still works while the receiver is off.
+            "GET" to "/smb" -> smbListResponse(request)
+            "POST" to "/smb/play" -> smbPlayResponse(request)
+            "POST" to "/smb/queue" -> smbQueueResponse(request)
+            else -> heosHandle(request)
+        }
+    }
+
+    private suspend fun heosHandle(request: LanControlRequest): LanControlResponse {
+        val client = heosSession.heosClient
+            ?: return LanControlResponse(503, """{"error":"HEOS not connected"}""")
+        val pid = resolvePid(client) ?: return LanControlResponse(503, """{"error":"no player found"}""")
+
+        return when (request.method to request.path) {
             "GET" to "/status" -> statusResponse(client, pid)
             "GET" to "/queue" -> queueResponse(client, pid)
             "POST" to "/play" -> ok { client.setPlayState(pid, PlayState.Play) }
@@ -119,6 +146,11 @@ class LanControlManager @Inject constructor(
             "POST" to "/queue/play" -> withIntParam(request, "qid") { qid -> client.playQueueItem(pid, qid) }
             "POST" to "/power" -> handlePower(request)
             "POST" to "/soundmode" -> handleSoundMode(request)
+            "POST" to "/input" -> handleInput(request)
+            "POST" to "/bitperfect" -> handleBitPerfect(request)
+            "GET" to "/browse" -> browseResponse(client, request)
+            "POST" to "/browse/queue" -> browseQueueResponse(client, pid, request)
+            "POST" to "/browse/playall" -> browsePlayAllResponse(client, pid, request)
             else -> LanControlResponse.notFound()
         }
     }
@@ -130,6 +162,14 @@ class LanControlManager @Inject constructor(
         return pid
     }
 
+    /** Same latch-onto-the-local-source behaviour as [com.denonmusic.app.browse.BrowseViewModel]. */
+    private suspend fun resolveSid(client: HeosClient): String? {
+        cachedSid?.let { return it }
+        val sid = runCatching { sourceRepository.detectAndPersist(client) }.getOrNull()?.sid
+        cachedSid = sid
+        return sid
+    }
+
     private suspend fun statusResponse(client: HeosClient, pid: String): LanControlResponse {
         val nowPlaying = runCatching { client.getNowPlaying(pid) }.getOrNull()
         val playState = runCatching { client.getPlayState(pid) }.getOrNull()
@@ -138,6 +178,11 @@ class LanControlManager @Inject constructor(
         val avrClient = avrSession.avrClient
         val power = avrClient?.let { runCatching { it.powerState() }.getOrNull() }
         val soundMode = avrClient?.let { runCatching { it.soundMode() }.getOrNull() }
+        val inputSource = avrClient?.let { runCatching { it.inputSource() }.getOrNull() }
+        val signalType = avrClient?.let { runCatching { it.signalType() }.getOrNull() }
+        val sampleRateKhz = avrClient?.let { runCatching { it.sampleRateKhz() }.getOrNull() }
+        val outputChannels = avrClient?.let { runCatching { it.outputChannels() }.getOrNull() }.orEmpty()
+        val bitPerfectPolicy = runCatching { settings.settings.first().bitPerfectPolicy }.getOrNull()
 
         val json = buildString {
             append("{")
@@ -150,7 +195,12 @@ class LanControlManager @Inject constructor(
             append(""""repeat":${jsonString(playMode?.repeat?.wire)},""")
             append(""""shuffle":${playMode?.shuffle ?: "null"},""")
             append(""""avrPower":${jsonString(power?.name)},""")
-            append(""""soundMode":${jsonString(soundMode?.name)}""")
+            append(""""soundMode":${jsonString(soundMode?.name)},""")
+            append(""""input":${jsonString(inputSource)},""")
+            append(""""signalType":${jsonString(signalType?.name)},""")
+            append(""""sampleRateKhz":${sampleRateKhz ?: "null"},""")
+            append(""""outputChannels":${outputChannels.joinToString(prefix = "[", postfix = "]") { """{"code":${jsonString(it.code)},"level":${jsonString(it.level)}}""" }},""")
+            append(""""bitPerfectPolicy":${jsonString(bitPerfectPolicy)}""")
             append("}")
         }
         return LanControlResponse.ok(json)
@@ -186,6 +236,183 @@ class LanControlManager @Inject constructor(
         return ok { client.setSoundMode(mode) }
     }
 
+    private suspend fun handleInput(request: LanControlRequest): LanControlResponse {
+        val client = avrSession.avrClient ?: return LanControlResponse(503, """{"error":"AVR not connected"}""")
+        val mnemonic = request.query["mnemonic"]?.takeIf { it.isNotBlank() }
+            ?: return LanControlResponse(400, """{"error":"missing 'mnemonic'"}""")
+        return ok { client.selectInput(mnemonic) }
+    }
+
+    /** Same persist-then-apply-live behaviour as [com.denonmusic.app.avr.AvrViewModel.setBitPerfectPolicy]. */
+    private suspend fun handleBitPerfect(request: LanControlRequest): LanControlResponse {
+        val name = request.query["policy"]
+        val policy = BitPerfectPolicy.entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
+            ?: return LanControlResponse(400, """{"error":"unknown policy, expected one of ${BitPerfectPolicy.entries.joinToString { it.name }}"}""")
+        settings.setBitPerfectPolicy(policy.name)
+        val client = avrSession.avrClient
+        return ok { client?.let { it.applyBitPerfectPolicy(policy) } }
+    }
+
+    /**
+     * Lists one level of the HEOS-indexed library: `sid` defaults to the auto-detected local source
+     * (same as [com.denonmusic.app.browse.BrowseViewModel]'s bootstrap), `cid` defaults to that
+     * source's root. The caller (the web UI) keeps its own breadcrumb - each returned item already
+     * carries the `sid`/`cid` needed to browse into it, so this endpoint itself is stateless.
+     */
+    private suspend fun browseResponse(client: HeosClient, request: LanControlRequest): LanControlResponse {
+        val sid = request.query["sid"] ?: resolveSid(client)
+            ?: return LanControlResponse(503, """{"error":"no queueable music source found"}""")
+        val cid = request.query["cid"]
+        val page = runCatching { client.browse(sid, cid) }.getOrElse { e ->
+            return LanControlResponse(500, """{"error":${jsonString(e.message ?: "browse failed")}}""")
+        }
+        val json = buildString {
+            append("{")
+            append(""""sid":${jsonString(sid)},""")
+            append(""""cid":${jsonString(cid)},""")
+            append(""""isPlayableContainer":${page.isPlayableContainer},""")
+            append(""""items":${page.items.joinToString(prefix = "[", postfix = "]") { it.toJson() }}""")
+            append("}")
+        }
+        return LanControlResponse.ok(json)
+    }
+
+    private fun BrowseItem.toJson(): String = buildString {
+        append("{")
+        append(""""name":${jsonString(name)},""")
+        append(""""sid":${jsonString(sid)},""")
+        append(""""cid":${jsonString(cid)},""")
+        append(""""mid":${jsonString(mid)},""")
+        append(""""isContainer":$isContainer,""")
+        append(""""isTrack":$isTrack,""")
+        append(""""artist":${jsonString(artist)},""")
+        append(""""album":${jsonString(album)},""")
+        append(""""imageUrl":${jsonString(imageUrl)}""")
+        append("}")
+    }
+
+    private suspend fun browseQueueResponse(client: HeosClient, pid: String, request: LanControlRequest): LanControlResponse {
+        val sid = request.query["sid"] ?: return LanControlResponse(400, """{"error":"missing 'sid'"}""")
+        val cid = request.query["cid"] ?: return LanControlResponse(400, """{"error":"missing 'cid'"}""")
+        val mid = request.query["mid"]
+        val criteria = parseAddCriteria(request) ?: return badCriteria()
+        return ok { client.addToQueue(pid = pid, sid = sid, cid = cid, mid = mid, criteria = criteria) }
+    }
+
+    /**
+     * Walks the whole subtree under `sid`/`cid`, same as
+     * [com.denonmusic.app.browse.BrowseViewModel.playAllCurrentContainer] - a multi-disc album
+     * (`CD1`/`CD2` subfolders, no tracks at the album's own level) never gets HEOS's own
+     * "playable container" flag, so a plain `addToQueue(cid)` would silently do nothing for it.
+     */
+    private suspend fun browsePlayAllResponse(client: HeosClient, pid: String, request: LanControlRequest): LanControlResponse {
+        val sid = request.query["sid"] ?: return LanControlResponse(400, """{"error":"missing 'sid'"}""")
+        val cid = request.query["cid"]
+        val criteria = parseAddCriteria(request) ?: return badCriteria()
+
+        val targets = runCatching { collectQueueTargets(client, sid, cid) }.getOrElse { e ->
+            return LanControlResponse(500, """{"error":${jsonString(e.message ?: "couldn't gather tracks")}}""")
+        }
+        if (targets.isEmpty()) return LanControlResponse(404, """{"error":"nothing playable found"}""")
+        if (targets.size > MAX_QUEUE_TARGETS) {
+            return LanControlResponse(400, """{"error":"too many items to queue at once (limit $MAX_QUEUE_TARGETS) - open a smaller folder"}""")
+        }
+        targets.forEachIndexed { index, target ->
+            // Only the first part carries the caller's chosen criteria; every part after it always
+            // appends, or a multi-part "replace and play" would replace the queue anew on each call.
+            val partCriteria = if (index == 0) criteria else AddCriteria.AddToEnd
+            client.addToQueue(pid = pid, sid = target.sid, cid = target.cid, mid = target.mid, criteria = partCriteria)
+        }
+        return LanControlResponse.ok("""{"ok":true,"queued":${targets.size}}""")
+    }
+
+    private data class QueueTarget(val sid: String, val cid: String, val mid: String?)
+
+    private suspend fun collectQueueTargets(client: HeosClient, sid: String, cid: String?, depth: Int = 0): List<QueueTarget> {
+        if (depth > MAX_RECURSE_DEPTH) return emptyList()
+        val items = mutableListOf<BrowseItem>()
+        var isPlayable = false
+        client.browseAll(sid, cid).collect { page ->
+            items += page.items
+            isPlayable = isPlayable || page.isPlayableContainer
+        }
+        val subContainers = items.filter { it.isContainer && it.sid == null && it.cid != null }
+        if (subContainers.isEmpty()) {
+            return if (isPlayable && cid != null) {
+                listOf(QueueTarget(sid, cid, null))
+            } else {
+                items.filter { it.isTrack }.map { QueueTarget(sid, it.cid ?: cid.orEmpty(), it.mid) }
+            }
+        }
+        val results = mutableListOf<QueueTarget>()
+        for (sub in subContainers) {
+            results += collectQueueTargets(client, sid, sub.cid, depth + 1)
+            if (results.size > MAX_QUEUE_TARGETS) break
+        }
+        return results
+    }
+
+    private fun parseAddCriteria(request: LanControlRequest): AddCriteria? =
+        request.query["criteria"]?.let { name -> AddCriteria.entries.firstOrNull { it.name.equals(name, ignoreCase = true) } }
+
+    private fun badCriteria() =
+        LanControlResponse(400, """{"error":"missing or invalid 'criteria', expected one of ${AddCriteria.entries.joinToString { it.name }}"}""")
+
+    /** `null` when no share is configured yet - same check [com.denonmusic.app.bridge.SmbBrowseViewModel] makes. */
+    private suspend fun smbOverlay(): SmbOverlay? {
+        val saved = settings.settings.first()
+        val host = saved.smbHost?.takeIf { it.isNotBlank() } ?: return null
+        val share = saved.smbShare?.takeIf { it.isNotBlank() } ?: return null
+        val credentials = SmbCredentials(host, share, saved.smbUsername.orEmpty(), saved.smbPassword.orEmpty())
+        return mediaInfoRepository.overlayFor(credentials)
+    }
+
+    private suspend fun smbListResponse(request: LanControlRequest): LanControlResponse {
+        val overlay = smbOverlay() ?: return LanControlResponse(503, """{"error":"no SMB share configured"}""")
+        val path = request.query["path"].orEmpty()
+        val entries = withContext(Dispatchers.IO) { runCatching { overlay.listDirectory(path) }.getOrNull() }
+            ?: return LanControlResponse(404, """{"error":"couldn't list this folder"}""")
+        val json = entries.joinToString(prefix = "[", postfix = "]") { it.toJson() }
+        return LanControlResponse.ok(json)
+    }
+
+    private fun SmbEntry.toJson(): String = buildString {
+        append("{")
+        append(""""name":${jsonString(name)},""")
+        append(""""path":${jsonString(path)},""")
+        append(""""isDirectory":$isDirectory""")
+        append("}")
+    }
+
+    /**
+     * Plays every file under `path` (recursively, same as tapping a folder in the app's own SMB
+     * browser) - `file`, if given, must be one of those paths and moves the start point to it, the
+     * same "tap a track, play the rest of its folder after" behaviour as
+     * [com.denonmusic.app.browse.BrowseViewModel.playBridgeFolder].
+     */
+    private suspend fun smbPlayResponse(request: LanControlRequest): LanControlResponse {
+        val overlay = smbOverlay() ?: return LanControlResponse(503, """{"error":"no SMB share configured"}""")
+        val dir = request.query["path"].orEmpty()
+        val files = withContext(Dispatchers.IO) { runCatching { overlay.listFilesRecursive(dir) }.getOrDefault(emptyList()) }
+        if (files.isEmpty()) return LanControlResponse(404, """{"error":"no playable files found"}""")
+        val startFile = request.query["file"]
+        val startIndex = startFile?.let { f -> files.indexOfFirst { it.path == f }.takeIf { it >= 0 } } ?: 0
+        bridgeQueueController.replaceQueueAndPlay(files.map { it.path.toBridgeQueueItem() }, startIndex)
+        return LanControlResponse.ok("""{"ok":true,"queued":${files.size}}""")
+    }
+
+    /** Appends without disturbing whatever's already playing - the browser's "add to queue" action. */
+    private suspend fun smbQueueResponse(request: LanControlRequest): LanControlResponse {
+        val overlay = smbOverlay() ?: return LanControlResponse(503, """{"error":"no SMB share configured"}""")
+        val dir = request.query["path"].orEmpty()
+        val files = withContext(Dispatchers.IO) { runCatching { overlay.listFilesRecursive(dir) }.getOrDefault(emptyList()) }
+        if (files.isEmpty()) return LanControlResponse(404, """{"error":"no playable files found"}""")
+        bridgeQueueController.addToQueue(files.map { it.path.toBridgeQueueItem() })
+        return LanControlResponse.ok("""{"ok":true,"queued":${files.size}}""")
+    }
+
+    private fun String.toBridgeQueueItem() = BridgeQueueItem(path = this, displayName = substringAfterLast('/'))
+
     private suspend fun withIntParam(request: LanControlRequest, name: String, action: suspend (Int) -> Unit): LanControlResponse {
         val value = request.query[name]?.toIntOrNull()
             ?: return LanControlResponse(400, """{"error":"missing or invalid '$name'"}""")
@@ -215,6 +442,8 @@ class LanControlManager @Inject constructor(
     companion object {
         /** Fixed and unlikely to collide with anything else this app or a common LAN service uses. */
         const val LAN_CONTROL_PORT: Int = 8901
+        private const val MAX_RECURSE_DEPTH = 6
+        private const val MAX_QUEUE_TARGETS = 300
     }
 }
 
