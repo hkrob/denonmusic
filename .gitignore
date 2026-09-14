@@ -8,6 +8,8 @@ local.properties
 *.aab
 *.keystore
 *.jks
+# Release signing config - contains store/key passwords in plaintext. See .github/workflows/README-release.md.
+keystore.properties
 captures/
 
 # IDE
