@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.denonmusic.app.lancontrol.LanControlStatus
 import com.denonmusic.app.ui.Winamp
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,6 +45,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var smbPassword by remember { mutableStateOf("") }
     var autoDimAfterSeconds by remember { mutableStateOf("") }
     var autoDimBrightnessPercent by remember { mutableStateOf("") }
+    var lanControlPassword by remember { mutableStateOf("") }
 
     LaunchedEffect(state) {
         avrHost = state.avrHost.orEmpty()
@@ -54,6 +56,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         smbPassword = state.smbPassword.orEmpty()
         autoDimAfterSeconds = state.autoDimAfterSeconds.toString()
         autoDimBrightnessPercent = state.autoDimBrightnessPercent.toString()
+        lanControlPassword = state.lanControlPassword.orEmpty()
     }
 
     Scaffold(
@@ -127,8 +130,42 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }) {
                 Text("SAVE AUTO-DIM SETTINGS", style = Winamp.labelStyle, color = Winamp.Amber)
             }
+
+            SectionLabel("LAN CONTROL", modifier = Modifier.padding(top = 24.dp))
+            Text(
+                "Lets another device on the LAN drive playback over HTTP. A blank password keeps this " +
+                    "off no matter what the switch below says.",
+                style = Winamp.smallStyle,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+            SwitchRow(
+                label = "Enable LAN control",
+                checked = state.lanControlEnabled,
+                onCheckedChange = { viewModel.setLanControl(it, lanControlPassword) },
+            )
+            LabeledField("Password (required)", lanControlPassword, { lanControlPassword = it }, isPassword = true)
+            TextButton(onClick = { viewModel.setLanControl(state.lanControlEnabled, lanControlPassword) }) {
+                Text("SAVE LAN CONTROL SETTINGS", style = Winamp.labelStyle, color = Winamp.Amber)
+            }
+            LanControlStatusRow(viewModel)
         }
     }
+}
+
+@Composable
+private fun LanControlStatusRow(viewModel: SettingsViewModel) {
+    val status by viewModel.lanControlStatus.collectAsState()
+    val text = when (val s = status) {
+        is LanControlStatus.Off -> "OFF"
+        is LanControlStatus.Running -> "RUNNING - ${s.url} (send the password as header X-Lan-Control-Token or ?token=)"
+        is LanControlStatus.Error -> "ERROR - ${s.reason}"
+    }
+    val color = when (status) {
+        is LanControlStatus.Running -> Winamp.Green
+        is LanControlStatus.Error -> Winamp.Amber
+        else -> Winamp.GreenDim
+    }
+    Text(text, style = Winamp.smallStyle, color = color, modifier = Modifier.padding(top = 8.dp))
 }
 
 @Composable

@@ -7,6 +7,7 @@ import com.denonmusic.app.bridge.BridgeQueueController
 import com.denonmusic.app.bridge.BridgeQueueState
 import com.denonmusic.app.heos.HeosConnectionState
 import com.denonmusic.app.heos.HeosSession
+import com.denonmusic.app.lancontrol.LanControlManager
 import com.denonmusic.avr.BitPerfectPolicy
 import com.denonmusic.avr.SignalType
 import com.denonmusic.data.settings.SettingsRepository
@@ -108,6 +109,7 @@ class PlayerViewModel @Inject constructor(
     private val avrSession: AvrSession,
     private val settings: SettingsRepository,
     private val bridgeQueueController: BridgeQueueController,
+    private val lanControlManager: LanControlManager,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
@@ -118,6 +120,10 @@ class PlayerViewModel @Inject constructor(
     private var lastPlayState: PlayState? = null
 
     init {
+        // Idempotent, and PlayerViewModel (created once at MainScreen level) is the natural place to
+        // kick this off: it's alive for the app's whole run regardless of which tab is open, same as
+        // every other session this ViewModel already bootstraps below.
+        lanControlManager.ensureStarted()
         viewModelScope.launch {
             session.state.collectLatest { state ->
                 if (state is HeosConnectionState.Connected) {

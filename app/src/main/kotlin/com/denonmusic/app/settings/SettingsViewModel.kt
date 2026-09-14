@@ -2,6 +2,8 @@ package com.denonmusic.app.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.denonmusic.app.lancontrol.LanControlManager
+import com.denonmusic.app.lancontrol.LanControlStatus
 import com.denonmusic.app.media.MediaInfoRepository
 import com.denonmusic.data.settings.AppSettings
 import com.denonmusic.data.settings.SettingsRepository
@@ -20,6 +22,7 @@ import kotlinx.coroutines.withContext
 class SettingsViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val mediaInfoRepository: MediaInfoRepository,
+    private val lanControlManager: LanControlManager,
 ) : ViewModel() {
 
     private val _settings = MutableStateFlow(AppSettings())
@@ -31,7 +34,12 @@ class SettingsViewModel @Inject constructor(
     private val _smbConnectionTestResult = MutableStateFlow<String?>(null)
     val smbConnectionTestResult: StateFlow<String?> = _smbConnectionTestResult.asStateFlow()
 
+    val lanControlStatus: StateFlow<LanControlStatus> = lanControlManager.status
+
     init {
+        // Idempotent - PlayerViewModel is the primary place this gets kicked off, but Settings
+        // shouldn't depend on load order to show accurate LAN control status.
+        lanControlManager.ensureStarted()
         viewModelScope.launch {
             settings.settings.collectLatest { _settings.value = it }
         }
@@ -48,6 +56,14 @@ class SettingsViewModel @Inject constructor(
 
     fun setAutoDim(enabled: Boolean, afterSeconds: Int, brightnessPercent: Int) =
         viewModelScope.launch { settings.setAutoDim(enabled, afterSeconds, brightnessPercent) }
+
+    /**
+     * A blank password always keeps the server off regardless of [enabled] - see
+     * [com.denonmusic.app.lancontrol.LanControlManager.ensureStarted] - so there's no way to end up
+     * with an unauthenticated LAN control API from this screen.
+     */
+    fun setLanControl(enabled: Boolean, password: String) =
+        viewModelScope.launch { settings.setLanControl(enabled, password) }
 
     /**
      * "Can we actually log in and see the share" - distinct from [testSmbPath] below, which needs a

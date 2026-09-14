@@ -37,6 +37,10 @@ data class AppSettings(
     val autoDimAfterSeconds: Int = DEFAULT_AUTO_DIM_AFTER_SECONDS,
     /** Brightness to dim to, 1-100 - never 0, so the screen never goes fully black and unreadable. */
     val autoDimBrightnessPercent: Int = DEFAULT_AUTO_DIM_BRIGHTNESS_PERCENT,
+    /** Whether the LAN control HTTP API should run. A blank [lanControlPassword] keeps it off regardless. */
+    val lanControlEnabled: Boolean = false,
+    /** Shared secret a LAN client must send back (`X-Lan-Control-Token` header or `?token=`) to use the API. */
+    val lanControlPassword: String? = null,
 ) {
     companion object {
         const val DEFAULT_AVR_INPUT_MNEMONIC: String = "NET"
@@ -67,6 +71,8 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
             autoDimEnabled = prefs[KEY_AUTO_DIM_ENABLED] ?: false,
             autoDimAfterSeconds = prefs[KEY_AUTO_DIM_AFTER_SECONDS] ?: AppSettings.DEFAULT_AUTO_DIM_AFTER_SECONDS,
             autoDimBrightnessPercent = prefs[KEY_AUTO_DIM_BRIGHTNESS_PERCENT] ?: AppSettings.DEFAULT_AUTO_DIM_BRIGHTNESS_PERCENT,
+            lanControlEnabled = prefs[KEY_LAN_CONTROL_ENABLED] ?: false,
+            lanControlPassword = prefs[KEY_LAN_CONTROL_PASSWORD],
         )
     }
 
@@ -115,6 +121,13 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         }
     }
 
+    suspend fun setLanControl(enabled: Boolean, password: String) {
+        dataStore.edit {
+            it[KEY_LAN_CONTROL_ENABLED] = enabled
+            it[KEY_LAN_CONTROL_PASSWORD] = password
+        }
+    }
+
     companion object {
         private val KEY_AVR_HOST = stringPreferencesKey("avr_host")
         private val KEY_SELECTED_SID = stringPreferencesKey("selected_source_sid")
@@ -130,6 +143,8 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         private val KEY_AUTO_DIM_ENABLED = booleanPreferencesKey("auto_dim_enabled")
         private val KEY_AUTO_DIM_AFTER_SECONDS = intPreferencesKey("auto_dim_after_seconds")
         private val KEY_AUTO_DIM_BRIGHTNESS_PERCENT = intPreferencesKey("auto_dim_brightness_percent")
+        private val KEY_LAN_CONTROL_ENABLED = booleanPreferencesKey("lan_control_enabled")
+        private val KEY_LAN_CONTROL_PASSWORD = stringPreferencesKey("lan_control_password")
 
         const val PREFERENCES_NAME: String = "denonmusic_settings"
     }
