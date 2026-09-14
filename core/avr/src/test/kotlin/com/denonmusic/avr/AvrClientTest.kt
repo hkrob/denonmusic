@@ -90,7 +90,7 @@ class AvrClientTest {
 
         client.ensureOnAndSelected("NET")
 
-        assertEquals(listOf("PW?", "ZMON", "SINET"), server.received)
+        awaitReceived(listOf("PW?", "ZMON", "SINET"))
     }
 
     @Test
@@ -117,7 +117,7 @@ class AvrClientTest {
 
         client.applyBitPerfectPolicy(BitPerfectPolicy.AutoPureDirect)
 
-        assertEquals(listOf("MSPURE DIRECT"), server.received)
+        awaitReceived(listOf("MSPURE DIRECT"))
     }
 
     @Test
