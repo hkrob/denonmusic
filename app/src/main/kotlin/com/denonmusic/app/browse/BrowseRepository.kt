@@ -10,7 +10,6 @@ import com.denonmusic.data.browse.toCacheJson
 import com.denonmusic.heos.BrowseItem
 import com.denonmusic.heos.BrowseOption
 import com.denonmusic.heos.HeosClient
-import com.denonmusic.heos.HeosCommandException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -100,22 +99,25 @@ class BrowseRepository @Inject constructor(
     }
 
     /**
-     * Tries the deepest cached level first; on a missing-entity error (server reindexed, share
-     * renamed) pops one level and retries, so a stale restore lands you somewhere real instead of at
-     * an error screen.
+     * Tries the deepest cached level first; on *any* failure - a missing-entity error (server
+     * reindexed, share renamed), a busy/system HEOS error, a timeout, whatever - pops one level and
+     * retries, so a stale restore lands you somewhere real instead of at an error screen.
+     *
+     * This must never let an exception escape: it runs unconditionally on every reconnect (see
+     * [BrowseViewModel]'s bootstrap), so anything thrown here previously became a permanent
+     * crash-on-launch loop the moment one persisted level started failing for any reason - the app
+     * would crash before the user ever got a chance to back out of that folder, and only clearing
+     * app data (which wipes this very stack) could recover it. Confirmed against a real crash report
+     * matching exactly that shape.
      */
     suspend fun restoreResolving(client: HeosClient): List<BrowseStackEntity> {
         var stack = stackDao.getStack()
         while (stack.isNotEmpty()) {
             val deepest = stack.last()
-            try {
-                client.browse(deepest.sid, deepest.cid?.takeIf { it.isNotEmpty() }, 0, 0)
-                return stack
-            } catch (e: HeosCommandException) {
-                if (!e.error.isMissingEntity) throw e
-                stack = stack.dropLast(1)
-                stackDao.truncateAfter(stack.lastIndex)
-            }
+            val resolved = runCatching { client.browse(deepest.sid, deepest.cid?.takeIf { it.isNotEmpty() }, 0, 0) }
+            if (resolved.isSuccess) return stack
+            stack = stack.dropLast(1)
+            stackDao.truncateAfter(stack.lastIndex)
         }
         return stack
     }

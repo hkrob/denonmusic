@@ -87,7 +87,23 @@ class BrowseViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Runs unconditionally on every HEOS reconnect - including the very first thing that happens on
+     * every app launch once the session connects - so nothing in here may throw. A stray exception
+     * (a transient HEOS error, a timeout right after connecting) previously crashed the app on that
+     * same launch, every launch, since reconnecting and re-running this is exactly what happens next
+     * time too; only clearing app data (wiping the persisted browse stack this reads) broke the loop.
+     * See [BrowseRepository.restoreResolving]'s own hardening for the same reasoning.
+     */
     private suspend fun bootstrap() {
+        try {
+            bootstrapUnsafe()
+        } catch (e: Exception) {
+            _uiState.value = _uiState.value.copy(message = "Couldn't load the library: ${e.message ?: e.toString()}")
+        }
+    }
+
+    private suspend fun bootstrapUnsafe() {
         val client = session.heosClient ?: return
         runCatching { client.getPlayers() }.getOrNull()?.firstOrNull()?.let { pid = it.pid }
 
