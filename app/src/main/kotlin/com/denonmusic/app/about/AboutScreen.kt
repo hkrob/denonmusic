@@ -49,6 +49,9 @@ import com.denonmusic.app.update.UpdateViewModel
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.2" to listOf(
+        "Fixed a crash-on-launch loop when the last-visited browse folder became unreachable (server reindex, share rename, or a transient HEOS error) - the app now backs out to a working folder instead of crashing every time it reconnects.",
+    ),
     "0.1.1" to listOf(
         "Settings can now discover the AVR on the LAN (SSDP) instead of typing its IP by hand.",
     ),
