@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -134,6 +136,7 @@ private fun SourceLinkButton() {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun UpdateSection(viewModel: UpdateViewModel) {
     val state by viewModel.state.collectAsState()
@@ -148,7 +151,7 @@ private fun UpdateSection(viewModel: UpdateViewModel) {
         SectionLabel("UPDATES")
 
         Text("Check for updates", style = Winamp.smallStyle)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             UpdateCheckFrequency.entries.forEach { option ->
                 FilterChip(
                     selected = frequency == option,

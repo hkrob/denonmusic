@@ -104,10 +104,28 @@ class BridgeQueueController @Inject constructor(
         playCurrent()
     }
 
-    /** Only steps a queue that actually has something current - see the class doc. */
+    /**
+     * Only steps a queue that actually has something current - see the class doc.
+     *
+     * Unlike the user-facing [next] (a manual "skip" press should just do nothing at the end of a
+     * non-repeating queue and leave the last track showing), a natural end-of-queue here has to
+     * relinquish control back to real HEOS state entirely. Otherwise [BridgeQueueState.currentItem]
+     * - and so [PlayerUiState.isBridgeModeActive] - stays pinned to the last bridge track forever,
+     * even once the receiver has moved on to whatever it does next (its own persistent queue, most
+     * often), leaving Now Playing stuck showing a track that finished minutes ago.
+     */
     private fun advance() {
         if (_state.value.items.isEmpty() || _state.value.currentIndex == -1) return
-        next()
+        // Computed once and reused (not delegated to the public next()), since BridgeQueueLogic.next
+        // draws from Math.random() under shuffle - calling it a second time to re-derive the same
+        // step could legitimately pick a different track, or land on null where the first call didn't.
+        val result = BridgeQueueLogic.next(_state.value)
+        if (result == null) {
+            clear()
+        } else {
+            _state.value = result.copy(currentFormatInfo = null, currentArtwork = null)
+            playCurrent()
+        }
     }
 
     private fun subscribeEvents() {

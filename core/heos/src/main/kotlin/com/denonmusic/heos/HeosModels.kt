@@ -196,6 +196,15 @@ data class HeosPlayer(
 internal fun JsonObject.str(key: String): String? =
     this[key]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }?.takeIf { it != "null" }
 
+/**
+ * Same as [str], but for fields that are free-text bound for display (`name`, `song`, `artist`,
+ * `album`) rather than identifiers (`cid`, `mid`, `sid`) - the wire escapes `&`/`=`/`%` in these per
+ * [HeosProtocol.escape], so a DLNA/Plex-sourced title containing `&` would otherwise show up to the
+ * user as the literal text `%26`. Never apply this to an identifier: those must be handed back to
+ * the receiver exactly as received, still escaped.
+ */
+internal fun JsonObject.displayStr(key: String): String? = str(key)?.let(HeosProtocol::unescape)
+
 internal fun JsonObject.int(key: String): Int? = str(key)?.toIntOrNull()
 
 internal fun JsonObject.bool(key: String): Boolean? = when (str(key)?.lowercase()) {
@@ -209,7 +218,7 @@ internal fun JsonElement.toMusicSources(): List<MusicSource> =
         val obj = element.jsonObject
         MusicSource(
             sid = obj.str("sid").orEmpty(),
-            name = obj.str("name").orEmpty(),
+            name = obj.displayStr("name").orEmpty(),
             type = obj.str("type").orEmpty(),
             imageUrl = obj.str("image_url"),
             available = obj.bool("available") ?: true,
@@ -221,7 +230,7 @@ internal fun JsonElement.toBrowseItems(): List<BrowseItem> =
         val obj = element.jsonObject
         val sid = obj.str("sid")
         BrowseItem(
-            name = obj.str("name").orEmpty(),
+            name = obj.displayStr("name").orEmpty(),
             imageUrl = obj.str("image_url"),
             mediaType = obj.str("type"),
             cid = obj.str("cid"),
@@ -232,8 +241,8 @@ internal fun JsonElement.toBrowseItems(): List<BrowseItem> =
             // browse into rather than defaulting to a dead end.
             isContainer = obj.bool("container") ?: (sid != null),
             isPlayable = obj.bool("playable") ?: false,
-            artist = obj.str("artist"),
-            album = obj.str("album"),
+            artist = obj.displayStr("artist"),
+            album = obj.displayStr("album"),
             sid = sid,
         )
     }
@@ -245,9 +254,9 @@ internal fun JsonElement.toQueueItems(): List<QueueItem> =
         QueueItem(
             qid = qid,
             mid = obj.str("mid").orEmpty(),
-            song = obj.str("song").orEmpty(),
-            album = obj.str("album").orEmpty(),
-            artist = obj.str("artist").orEmpty(),
+            song = obj.displayStr("song").orEmpty(),
+            album = obj.displayStr("album").orEmpty(),
+            artist = obj.displayStr("artist").orEmpty(),
             imageUrl = obj.str("image_url"),
         )
     }
@@ -258,7 +267,7 @@ internal fun JsonElement.toPlayers(): List<HeosPlayer> =
         val pid = obj.str("pid") ?: return@mapNotNull null
         HeosPlayer(
             pid = pid,
-            name = obj.str("name").orEmpty(),
+            name = obj.displayStr("name").orEmpty(),
             model = obj.str("model"),
             version = obj.str("version"),
             serial = obj.str("serial"),
@@ -270,9 +279,9 @@ internal fun JsonElement.toNowPlaying(): NowPlaying? {
     val obj = (this as? JsonArray)?.firstOrNull()?.jsonObject ?: (this as? JsonObject) ?: return null
     return NowPlaying(
         type = obj.str("type"),
-        song = obj.str("song").orEmpty(),
-        album = obj.str("album").orEmpty(),
-        artist = obj.str("artist").orEmpty(),
+        song = obj.displayStr("song").orEmpty(),
+        album = obj.displayStr("album").orEmpty(),
+        artist = obj.displayStr("artist").orEmpty(),
         imageUrl = obj.str("image_url"),
         mid = obj.str("mid"),
         qid = obj.int("qid"),

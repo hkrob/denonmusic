@@ -28,6 +28,7 @@ enum class SoundMode(val wire: String) {
     Virtual("MSVIRTUAL"),
     Auro3d("MSAURO3D"),
     Auro2dSurround("MSAURO2DSURR"),
+    NeuralX("MSNEURAL:X"),
     ;
 
     /** True in [Direct] or [PureDirect]: the only modes where DSD reaches the DAC unconverted. */
