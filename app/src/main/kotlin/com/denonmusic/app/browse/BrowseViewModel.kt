@@ -18,7 +18,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 data class BrowseUiState(
@@ -56,9 +57,14 @@ class BrowseViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            val saved = settings.settings.first()
-            _uiState.value = _uiState.value.copy(avrHost = saved.avrHost)
-            saved.avrHost?.let { session.start(it) }
+            // Reactive, not a one-shot read: this screen can be created before the AVR host is ever
+            // set (a fresh install lands here first), and it must not get stuck showing the "enter
+            // receiver IP" gate forever just because the host was set afterwards from Settings (or
+            // picked from LAN discovery there) rather than from this screen's own entry field.
+            settings.settings.map { it.avrHost }.distinctUntilChanged().collectLatest { host ->
+                _uiState.value = _uiState.value.copy(avrHost = host)
+                host?.let { session.start(it) }
+            }
         }
         viewModelScope.launch {
             session.state.collectLatest { state ->
