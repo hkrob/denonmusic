@@ -83,6 +83,14 @@ data class PlayerUiState(
     val message: String? = null,
     val bridgeQueue: BridgeQueueState = BridgeQueueState(),
     val technicalInfo: TechnicalInfo? = null,
+    /**
+     * True when the receiver's own local HEOS player registry answered `get_players` with an empty
+     * list - a known firmware quirk where the whole-home audio system and even the official HEOS app
+     * (which doesn't depend on this local call) keep working while this specific endpoint goes blank,
+     * usually until the receiver is power-cycled. Surfaced explicitly rather than left to read as an
+     * ordinary "nothing playing" - see [PlayerViewModel.resolvePlayerAndRefresh].
+     */
+    val noHeosPlayerFound: Boolean = false,
 ) {
     /**
      * True while [bridgeQueue] holds the track actually driving the receiver right now. Trusting our
@@ -143,17 +151,11 @@ class PlayerViewModel @Inject constructor(
     }
 
     private suspend fun bootstrap() {
-        val client = session.heosClient ?: return
-        val player = runCatching { client.getPlayers() }.getOrNull()?.firstOrNull() ?: return
-        _uiState.value = _uiState.value.copy(pid = player.pid)
         // The AVR and HEOS ports live on the same box, so the same host serves both. Started here
         // too (not only from AvrViewModel) so the bit-perfect policy applies even if the user has
         // never opened the AVR tab.
         runCatching { settings.settings.first() }.getOrNull()?.avrHost?.let { avrSession.start(it) }
-        refreshAll(player.pid)
-        refreshQueue(player.pid)
-        subscribeEvents(player.pid)
-        startPeriodicResync(player.pid)
+        startPeriodicResync()
     }
 
     /**
@@ -162,16 +164,54 @@ class PlayerViewModel @Inject constructor(
      * odd event, and a third party (the receiver's own remote, another HEOS app) changing state
      * doesn't necessarily fire an event this app happens to be listening for. Never lets the UI drift
      * further than this interval from ground truth, whatever the cause.
+     *
+     * Also the only place [resolvePlayerAndRefresh] runs from, so re-resolving the player id is on
+     * the same clock as everything else - see its own doc for why that can't be a one-shot lookup.
      */
-    private fun startPeriodicResync(pid: String) {
+    private fun startPeriodicResync() {
         resyncJob?.cancel()
         resyncJob = viewModelScope.launch {
             while (isActive) {
-                delay(RESYNC_INTERVAL_MS)
-                refreshAll(pid)
-                refreshQueue(pid)
+                resolvePlayerAndRefresh()
+                delay(if (_uiState.value.noHeosPlayerFound) NO_PLAYER_RETRY_INTERVAL_MS else RESYNC_INTERVAL_MS)
             }
         }
+    }
+
+    /**
+     * Re-resolves the active HEOS player on every tick rather than trusting a pid cached once at
+     * startup. Confirmed live against a real AVR-X4500H: its local `player/get_players` can answer
+     * with an empty list - independent of any one client's session, and while the receiver's own
+     * audio, the official HEOS app, and even this app's own `get_music_sources`/`heart_beat` calls
+     * keep working fine - typically until the unit is power-cycled. A pid cached once at the first
+     * successful bootstrap and never re-checked left the app permanently stuck silently showing blank
+     * Now Playing with a pid that no longer answered to anything, the moment that happened.
+     *
+     * Polling here both recovers automatically once the receiver's registry comes back and surfaces
+     * the gap to the user in the meantime via [PlayerUiState.noHeosPlayerFound], instead of a
+     * generic-looking "nothing playing".
+     */
+    private suspend fun resolvePlayerAndRefresh() {
+        val client = session.heosClient ?: return
+        val player = runCatching { client.getPlayers() }.getOrNull()?.firstOrNull()
+        if (player == null) {
+            if (!_uiState.value.noHeosPlayerFound) {
+                eventsJob?.cancel()
+                _uiState.value = _uiState.value.copy(
+                    noHeosPlayerFound = true,
+                    pid = null,
+                    nowPlaying = null,
+                    playState = null,
+                    queue = emptyList(),
+                )
+            }
+            return
+        }
+        val recovered = _uiState.value.pid != player.pid
+        _uiState.value = _uiState.value.copy(pid = player.pid, noHeosPlayerFound = false)
+        if (recovered) subscribeEvents(player.pid)
+        refreshAll(player.pid)
+        refreshQueue(player.pid)
     }
 
     private suspend fun refreshAll(pid: String) {
@@ -396,5 +436,7 @@ class PlayerViewModel @Inject constructor(
 
     private companion object {
         const val RESYNC_INTERVAL_MS = 15_000L
+        /** Tighter than [RESYNC_INTERVAL_MS] while no player is found, so recovery (e.g. a power cycle) shows up promptly. */
+        const val NO_PLAYER_RETRY_INTERVAL_MS = 5_000L
     }
 }

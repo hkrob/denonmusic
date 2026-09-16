@@ -48,7 +48,10 @@ fun MiniPlayerBar(state: PlayerUiState, onTogglePlay: () -> Unit, onExpand: () -
             )
         }
         Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
-            if (state.isBridgeModeActive) {
+            if (state.noHeosPlayerFound) {
+                Text("NO HEOS PLAYER FOUND", style = Winamp.labelStyle, color = Winamp.Amber)
+                Text("Check the receiver is on - a power cycle usually fixes this", style = Winamp.smallStyle)
+            } else if (state.isBridgeModeActive) {
                 Text(
                     text = state.bridgeQueue.currentItem?.displayName ?: "NO TRACK",
                     style = Winamp.labelStyle,

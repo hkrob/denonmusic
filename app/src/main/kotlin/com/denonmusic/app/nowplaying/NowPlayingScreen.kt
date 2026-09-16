@@ -83,7 +83,16 @@ fun NowPlayingScreen(playerViewModel: PlayerViewModel, onBack: () -> Unit) {
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            if (state.isBridgeModeActive) {
+            if (state.noHeosPlayerFound) {
+                Box(modifier = Modifier.size(220.dp).bevel().padding(bottom = 16.dp))
+                Text("NO HEOS PLAYER FOUND", style = Winamp.titleStyle, color = Winamp.Amber)
+                Text(
+                    "The receiver isn't reporting itself as a HEOS player right now - " +
+                        "check it's powered on. A power cycle usually fixes this.",
+                    style = Winamp.smallStyle,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            } else if (state.isBridgeModeActive) {
                 val item = state.bridgeQueue.currentItem
                 Box(modifier = Modifier.size(220.dp).bevel().padding(bottom = 16.dp)) {
                     LocalArtwork(
