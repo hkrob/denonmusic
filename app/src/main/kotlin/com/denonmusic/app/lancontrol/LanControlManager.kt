@@ -149,11 +149,19 @@ class LanControlManager @Inject constructor(
             "POST" to "/play" -> ok { client.setPlayState(pid, PlayState.Play) }
             "POST" to "/pause" -> ok { client.setPlayState(pid, PlayState.Pause) }
             "POST" to "/stop" -> ok { client.setPlayState(pid, PlayState.Stop) }
-            "POST" to "/next" -> ok { client.playNext(pid) }
-            "POST" to "/previous" -> ok { client.playPrevious(pid) }
+            // A play_stream track has no real HEOS queue behind it, so - same as PlayerViewModel.playNext/
+            // playPrevious - skip has to step the bridge's own client-side queue instead while it's what's
+            // actually driving the receiver; the real player/play_next would silently act on whatever real
+            // queue was last loaded, not the bridge track the user (and the phone app) currently sees.
+            "POST" to "/next" -> ok { if (bridgeQueueController.state.value.currentItem != null) bridgeQueueController.next() else client.playNext(pid) }
+            "POST" to "/previous" -> ok { if (bridgeQueueController.state.value.currentItem != null) bridgeQueueController.previous() else client.playPrevious(pid) }
             "POST" to "/volume" -> withIntParam(request, "level") { level -> client.setVolume(pid, level) }
             "POST" to "/mute" -> withBoolParam(request, "on") { on -> client.setMute(pid, on) }
-            "POST" to "/queue/play" -> withIntParam(request, "qid") { qid -> client.playQueueItem(pid, qid) }
+            // Same hand-back-to-real-HEOS as BrowseViewModel.queue()/playAllCurrentContainer(): explicitly
+            // starting a real HEOS queue item is the user choosing the primary path, so it relinquishes the
+            // bridge queue's ownership of Now Playing/transport - otherwise the phone app's own UI would
+            // keep showing the finished bridge track after a LAN-control client started real playback.
+            "POST" to "/queue/play" -> withIntParam(request, "qid") { qid -> client.playQueueItem(pid, qid); bridgeQueueController.clear() }
             "POST" to "/power" -> handlePower(request)
             "POST" to "/soundmode" -> handleSoundMode(request)
             "POST" to "/input" -> handleInput(request)
@@ -306,7 +314,10 @@ class LanControlManager @Inject constructor(
         val cid = request.query["cid"] ?: return LanControlResponse(400, """{"error":"missing 'cid'"}""")
         val mid = request.query["mid"]
         val criteria = parseAddCriteria(request) ?: return badCriteria()
-        return ok { client.addToQueue(pid = pid, sid = sid, cid = cid, mid = mid, criteria = criteria) }
+        // See the /next, /previous comment above: starting real HEOS playback via this endpoint is the
+        // primary path, so it hands Now Playing/transport back from the bridge queue - same as the app's
+        // own BrowseViewModel.queue().
+        return ok { client.addToQueue(pid = pid, sid = sid, cid = cid, mid = mid, criteria = criteria); bridgeQueueController.clear() }
     }
 
     /**
@@ -344,6 +355,9 @@ class LanControlManager @Inject constructor(
         } finally {
             endProgress()
         }
+        // Once, after the whole subtree is queued - not per-part, which would just re-clear an
+        // already-empty bridge queue on every iteration.
+        bridgeQueueController.clear()
         return LanControlResponse.ok("""{"ok":true,"queued":${targets.size}}""")
     }
 
