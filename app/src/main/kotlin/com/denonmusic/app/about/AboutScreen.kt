@@ -3,6 +3,7 @@ package com.denonmusic.app.about
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -94,6 +95,7 @@ fun AboutScreen(updateViewModel: UpdateViewModel = hiltViewModel()) {
                     color = Winamp.GreenDim,
                 )
                 Text("Built ${BuildConfig.BUILD_DATE}", style = Winamp.smallStyle)
+                GitHubLink()
             }
 
             Text(
@@ -122,14 +124,27 @@ fun AboutScreen(updateViewModel: UpdateViewModel = hiltViewModel()) {
     }
 }
 
+private val GITHUB_URL = "https://github.com/${UpdateConfig.OWNER}/${UpdateConfig.REPO}"
+
+/** Plain visible URL text, distinct from [SourceLinkButton]'s action-labelled button below it. */
+@Composable
+private fun GitHubLink() {
+    val context = LocalContext.current
+    Text(
+        "GitHub: github.com/${UpdateConfig.OWNER}/${UpdateConfig.REPO}",
+        style = Winamp.smallStyle,
+        color = Winamp.Amber,
+        modifier = Modifier.clickable {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_URL)))
+        },
+    )
+}
+
 @Composable
 private fun SourceLinkButton() {
     val context = LocalContext.current
     OutlinedButton(
-        onClick = {
-            val url = "https://github.com/${UpdateConfig.OWNER}/${UpdateConfig.REPO}"
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        },
+        onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_URL))) },
         modifier = Modifier.fillMaxWidth(),
     ) {
         Text("VIEW SOURCE / REPORT AN ISSUE", style = Winamp.labelStyle, color = Winamp.Amber)
