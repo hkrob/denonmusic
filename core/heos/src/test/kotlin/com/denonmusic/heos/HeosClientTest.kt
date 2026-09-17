@@ -94,6 +94,25 @@ class HeosClientTest {
     }
 
     @Test
+    fun `browse decodes XML entities a DLNA source leaves in the raw title`() = runBlocking {
+        // User-reported: a real DLNA-indexed track's title showed up as "Girls &amp; Boys" instead
+        // of "Girls & Boys" - the receiver forwards its DIDL-Lite <dc:title> text without decoding
+        // the entities XML itself required there in the first place.
+        server.on("browse/browse") { line ->
+            listOf(
+                """{"heos":{"command":"browse/browse","result":"success",""" +
+                    """"message":"sid=1024&returned=1&count=1&${HeosProtocol.SEQUENCE}=${FakeHeosServer.sequenceArgOf(line)}"},""" +
+                    """"payload":[{"container":"no","playable":"yes","type":"song","name":"Girls &amp; Boys","mid":"m1"}]}""",
+            )
+        }
+        connection.connect()
+
+        val page = client.browse(sid = "1024", cid = "Album/1")
+
+        assertEquals("Girls & Boys", page.items.single().name)
+    }
+
+    @Test
     fun `browseAll keeps paging when the receiver reports an unknown container size`() = runBlocking {
         // count=0 means "size unknown": the only valid stop signal is an empty page, so a client
         // that loops to count would stop immediately and show nothing.

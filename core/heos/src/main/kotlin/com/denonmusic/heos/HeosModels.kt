@@ -202,8 +202,37 @@ internal fun JsonObject.str(key: String): String? =
  * [HeosProtocol.escape], so a DLNA/Plex-sourced title containing `&` would otherwise show up to the
  * user as the literal text `%26`. Never apply this to an identifier: those must be handed back to
  * the receiver exactly as received, still escaped.
+ *
+ * Also XML/HTML-unescaped: user-reported a real DLNA-indexed track showing "Girls &amp; Boys"
+ * verbatim instead of "Girls & Boys" - the receiver's own HEOS firmware forwards a DLNA source's
+ * `<dc:title>` text straight out of its DIDL-Lite XML without decoding the entities XML requires
+ * there in the first place. A completely separate leak from the wire's own `%26` escaping above;
+ * both can appear in the same field depending on the source.
  */
-internal fun JsonObject.displayStr(key: String): String? = str(key)?.let(HeosProtocol::unescape)
+internal fun JsonObject.displayStr(key: String): String? = str(key)?.let(HeosProtocol::unescape)?.let(::xmlUnescape)
+
+private val NUMERIC_XML_ENTITY = Regex("&#(x[0-9a-fA-F]+|[0-9]+);")
+
+/** The five predefined XML entities plus decimal/hex numeric character references. */
+internal fun xmlUnescape(value: String): String {
+    if ('&' !in value) return value
+    val named = value
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+    if ('#' !in named) return named
+    return NUMERIC_XML_ENTITY.replace(named) { match ->
+        val body = match.groupValues[1]
+        val codePoint = if (body.startsWith("x", ignoreCase = true)) {
+            body.substring(1).toIntOrNull(16)
+        } else {
+            body.toIntOrNull()
+        }
+        codePoint?.let { runCatching { String(Character.toChars(it)) }.getOrNull() } ?: match.value
+    }
+}
 
 internal fun JsonObject.int(key: String): Int? = str(key)?.toIntOrNull()
 
