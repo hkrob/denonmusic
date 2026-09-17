@@ -6,6 +6,7 @@ import com.denonmusic.app.avr.AvrSession
 import com.denonmusic.app.bridge.BridgeQueueController
 import com.denonmusic.app.bridge.BridgeQueueState
 import com.denonmusic.app.heos.HeosConnectionState
+import com.denonmusic.app.heos.HeosPlaybackStarter
 import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.app.lancontrol.LanControlManager
 import com.denonmusic.avr.BitPerfectPolicy
@@ -98,8 +99,9 @@ data class PlayerUiState(
      * is deliberate: the AVR-X4500H probed for this project actually reads embedded tags out of a
      * `play_stream` file and reports the *real* title/artist/album once it's parsed them - "generic
      * label means bridge mode" turned out to be false in practice, not just theoretically fragile.
-     * [BrowseViewModel]'s primary-HEOS queue actions call `bridgeQueueController.clear()` when the
-     * user explicitly starts real HEOS playback, which is what turns this back off.
+     * Every action that starts real HEOS playback goes through
+     * [com.denonmusic.app.heos.HeosPlaybackStarter], which clears the bridge queue and so is what
+     * turns this back off.
      */
     val isBridgeModeActive: Boolean
         get() = bridgeQueue.currentItem != null
@@ -118,6 +120,7 @@ class PlayerViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val bridgeQueueController: BridgeQueueController,
     private val lanControlManager: LanControlManager,
+    private val playbackStarter: HeosPlaybackStarter,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
@@ -371,7 +374,7 @@ class PlayerViewModel @Inject constructor(
     fun playQueueItem(qid: Int) {
         val client = session.heosClient ?: return
         val pid = _uiState.value.pid ?: return
-        viewModelScope.launch { runCatching { client.playQueueItem(pid, qid) } }
+        viewModelScope.launch { runCatching { playbackStarter.playQueueItem(client, pid, qid) } }
     }
 
     fun removeFromQueue(qid: Int) {

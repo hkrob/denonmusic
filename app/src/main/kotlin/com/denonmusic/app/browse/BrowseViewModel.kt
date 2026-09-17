@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.denonmusic.app.bridge.BridgeQueueController
 import com.denonmusic.app.bridge.BridgeQueueItem
 import com.denonmusic.app.heos.HeosConnectionState
+import com.denonmusic.app.heos.HeosPlaybackStarter
 import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.data.browse.BrowseStackEntity
 import com.denonmusic.data.settings.SettingsRepository
@@ -47,6 +48,7 @@ class BrowseViewModel @Inject constructor(
     private val sourceRepository: SourceRepository,
     private val settings: SettingsRepository,
     private val bridgeQueueController: BridgeQueueController,
+    private val playbackStarter: HeosPlaybackStarter,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BrowseUiState())
@@ -186,8 +188,11 @@ class BrowseViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(message = "No HEOS player found")
                 return@launch
             }
+            // playbackStarter, not client, because the user explicitly chose the primary HEOS-indexed
+            // path - see HeosPlaybackStarter for why that has to relinquish bridge-mode ownership.
             runCatching {
-                client.addToQueue(
+                playbackStarter.addToQueue(
+                    client = client,
                     pid = playerId,
                     sid = current.sid,
                     cid = item.cid ?: current.cid.orEmpty(),
@@ -197,9 +202,6 @@ class BrowseViewModel @Inject constructor(
             }.onFailure { e ->
                 _uiState.value = _uiState.value.copy(message = e.message ?: "Queue action failed")
             }.onSuccess {
-                // The user explicitly chose the primary HEOS-indexed path - relinquish the bridge
-                // queue's ownership of Now Playing / transport control back to real HEOS behaviour.
-                bridgeQueueController.clear()
                 _uiState.value = _uiState.value.copy(message = "${action.label}: ${item.name}")
             }
         }
@@ -236,21 +238,13 @@ class BrowseViewModel @Inject constructor(
                 )
                 return@launch
             }
-            runCatching {
-                // Only the first part carries the user's chosen criteria (replace-and-play, or
-                // play-now); every part after it always appends, or a multi-part "replace and play"
-                // would replace the queue anew on each call and leave only the last part in it.
-                targets.forEachIndexed { index, target ->
-                    val criteria = if (index == 0) action.criteria else AddCriteria.AddToEnd
-                    client.addToQueue(pid = playerId, sid = target.sid, cid = target.cid, mid = target.mid, criteria = criteria)
+            runCatching { playbackStarter.addAll(client, playerId, targets, action.criteria) }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(message = e.message ?: "Queue action failed")
+                }.onSuccess {
+                    val parts = if (targets.size == 1) "" else " (${targets.size} parts)"
+                    _uiState.value = _uiState.value.copy(message = "${action.label}: ${current.displayName}$parts")
                 }
-            }.onFailure { e ->
-                _uiState.value = _uiState.value.copy(message = e.message ?: "Queue action failed")
-            }.onSuccess {
-                bridgeQueueController.clear()
-                val parts = if (targets.size == 1) "" else " (${targets.size} parts)"
-                _uiState.value = _uiState.value.copy(message = "${action.label}: ${current.displayName}$parts")
-            }
         }
     }
 

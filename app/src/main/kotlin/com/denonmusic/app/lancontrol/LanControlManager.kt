@@ -4,6 +4,7 @@ import com.denonmusic.app.avr.AvrSession
 import com.denonmusic.app.bridge.BridgeQueueController
 import com.denonmusic.app.bridge.BridgeQueueItem
 import com.denonmusic.app.browse.SourceRepository
+import com.denonmusic.app.heos.HeosPlaybackStarter
 import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.app.media.MediaInfoRepository
 import com.denonmusic.avr.BitPerfectPolicy
@@ -60,6 +61,7 @@ class LanControlManager @Inject constructor(
     private val sourceRepository: SourceRepository,
     private val mediaInfoRepository: MediaInfoRepository,
     private val bridgeQueueController: BridgeQueueController,
+    private val playbackStarter: HeosPlaybackStarter,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var started = false
@@ -159,11 +161,10 @@ class LanControlManager @Inject constructor(
             "POST" to "/previous" -> ok { if (bridgeQueueController.state.value.currentItem != null) bridgeQueueController.previous() else client.playPrevious(pid) }
             "POST" to "/volume" -> withIntParam(request, "level") { level -> client.setVolume(pid, level) }
             "POST" to "/mute" -> withBoolParam(request, "on") { on -> client.setMute(pid, on) }
-            // Same hand-back-to-real-HEOS as BrowseViewModel.queue()/playAllCurrentContainer(): explicitly
-            // starting a real HEOS queue item is the user choosing the primary path, so it relinquishes the
-            // bridge queue's ownership of Now Playing/transport - otherwise the phone app's own UI would
-            // keep showing the finished bridge track after a LAN-control client started real playback.
-            "POST" to "/queue/play" -> withIntParam(request, "qid") { qid -> client.playQueueItem(pid, qid); bridgeQueueController.clear() }
+            // Via playbackStarter, which relinquishes the bridge queue's ownership of Now
+            // Playing/transport - otherwise the phone app's own UI would keep showing the finished
+            // bridge track after a LAN-control client started real playback.
+            "POST" to "/queue/play" -> withIntParam(request, "qid") { qid -> playbackStarter.playQueueItem(client, pid, qid) }
             "POST" to "/power" -> handlePower(request)
             "POST" to "/soundmode" -> handleSoundMode(request)
             "POST" to "/input" -> handleInput(request)
@@ -301,10 +302,7 @@ class LanControlManager @Inject constructor(
         val cid = request.query["cid"] ?: return LanControlResponse(400, """{"error":"missing 'cid'"}""")
         val mid = request.query["mid"]
         val criteria = parseAddCriteria(request) ?: return badCriteria()
-        // See the /next, /previous comment above: starting real HEOS playback via this endpoint is the
-        // primary path, so it hands Now Playing/transport back from the bridge queue - same as the app's
-        // own BrowseViewModel.queue().
-        return ok { client.addToQueue(pid = pid, sid = sid, cid = cid, mid = mid, criteria = criteria); bridgeQueueController.clear() }
+        return ok { playbackStarter.addToQueue(client, pid, sid, cid, mid, criteria) }
     }
 
     /**
@@ -340,19 +338,12 @@ class LanControlManager @Inject constructor(
         }
         beginProgress("Queuing 0/${targets.size}…")
         try {
-            targets.forEachIndexed { index, target ->
-                // Only the first part carries the caller's chosen criteria; every part after it always
-                // appends, or a multi-part "replace and play" would replace the queue anew on each call.
-                val partCriteria = if (index == 0) criteria else AddCriteria.AddToEnd
-                client.addToQueue(pid = pid, sid = target.sid, cid = target.cid, mid = target.mid, criteria = partCriteria)
-                bumpProgress("Queuing ${index + 1}/${targets.size}…")
+            playbackStarter.addAll(client, pid, targets, criteria) { done ->
+                bumpProgress("Queuing $done/${targets.size}…")
             }
         } finally {
             endProgress()
         }
-        // Once, after the whole subtree is queued - not per-part, which would just re-clear an
-        // already-empty bridge queue on every iteration.
-        bridgeQueueController.clear()
         return LanControlResponse.ok("""{"ok":true,"queued":${targets.size}}""")
     }
 

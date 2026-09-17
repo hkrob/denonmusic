@@ -6,6 +6,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
+import com.denonmusic.app.bridge.BridgeQueueController
+import com.denonmusic.app.heos.BridgeQueueClearer
+import com.denonmusic.app.heos.HeosPlaybackStarter
 import com.denonmusic.data.AppDatabase
 import com.denonmusic.data.browse.BrowseCacheDao
 import com.denonmusic.data.browse.BrowseStackDao
@@ -51,4 +54,13 @@ object AppModule {
 
     @Provides
     fun provideMediaInfoCacheDao(db: AppDatabase): MediaInfoCacheDao = db.mediaInfoCacheDao()
+
+    /**
+     * [HeosPlaybackStarter] only ever needs to clear the bridge queue, so it asks for the narrow
+     * interface rather than the whole controller - which keeps it fakeable in a unit test.
+     */
+    @Provides
+    @Singleton
+    fun provideBridgeQueueClearer(controller: BridgeQueueController): BridgeQueueClearer =
+        BridgeQueueClearer { controller.clear() }
 }
