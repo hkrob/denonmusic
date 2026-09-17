@@ -64,7 +64,6 @@ class LanControlManager @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var started = false
     private var server: LanControlServer? = null
-    private var cachedPid: String? = null
     private var cachedSid: String? = null
 
     // Progress for whatever folder-wide play/queue walk (SMB or HEOS) is currently running, if any -
@@ -142,7 +141,10 @@ class LanControlManager @Inject constructor(
     private suspend fun heosHandle(request: LanControlRequest): LanControlResponse {
         val client = heosSession.heosClient
             ?: return LanControlResponse(503, """{"error":"HEOS not connected"}""")
-        val pid = resolvePid(client) ?: return LanControlResponse(503, """{"error":"no player found"}""")
+        // Re-resolved per request via the session rather than cached here: see HeosSession.resolvePid
+        // for why a latched pid wedges this whole surface until the process is killed.
+        val pid = heosSession.resolvePid()
+            ?: return LanControlResponse(503, """{"error":"no player found"}""")
 
         return when (request.method to request.path) {
             "GET" to "/status" -> statusResponse(client, pid)
@@ -172,13 +174,6 @@ class LanControlManager @Inject constructor(
             "POST" to "/browse/playall" -> browsePlayAllResponse(client, pid, request)
             else -> LanControlResponse.notFound()
         }
-    }
-
-    private suspend fun resolvePid(client: HeosClient): String? {
-        cachedPid?.let { return it }
-        val pid = runCatching { client.getPlayers() }.getOrNull()?.firstOrNull()?.pid
-        cachedPid = pid
-        return pid
     }
 
     /** Same latch-onto-the-local-source behaviour as [com.denonmusic.app.browse.BrowseViewModel]. */

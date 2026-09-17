@@ -52,7 +52,6 @@ class BrowseViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(BrowseUiState())
     val uiState: StateFlow<BrowseUiState> = _uiState.asStateFlow()
 
-    private var pid: String? = null
     private var listingJob: Job? = null
 
     init {
@@ -105,7 +104,6 @@ class BrowseViewModel @Inject constructor(
 
     private suspend fun bootstrapUnsafe() {
         val client = session.heosClient ?: return
-        runCatching { client.getPlayers() }.getOrNull()?.firstOrNull()?.let { pid = it.pid }
 
         val existingStack = browseRepository.currentStack()
         if (existingStack.isEmpty()) {
@@ -182,9 +180,12 @@ class BrowseViewModel @Inject constructor(
 
     fun queue(item: BrowseItem, action: QueueAction) {
         val client = session.heosClient ?: return
-        val playerId = pid ?: return
         val current = _uiState.value.breadcrumb.lastOrNull() ?: return
         viewModelScope.launch {
+            val playerId = session.resolvePid() ?: run {
+                _uiState.value = _uiState.value.copy(message = "No HEOS player found")
+                return@launch
+            }
             runCatching {
                 client.addToQueue(
                     pid = playerId,
@@ -213,9 +214,12 @@ class BrowseViewModel @Inject constructor(
      */
     fun playAllCurrentContainer(action: QueueAction) {
         val client = session.heosClient ?: return
-        val playerId = pid ?: return
         val current = _uiState.value.breadcrumb.lastOrNull() ?: return
         viewModelScope.launch {
+            val playerId = session.resolvePid() ?: run {
+                _uiState.value = _uiState.value.copy(message = "No HEOS player found")
+                return@launch
+            }
             val targets = runCatching { QueueTargetResolver.collect(client, current.sid, current.cid) }
                 .getOrElse { e ->
                     _uiState.value = _uiState.value.copy(message = e.message ?: "Couldn't gather tracks")
@@ -260,8 +264,11 @@ class BrowseViewModel @Inject constructor(
      */
     fun playBridgeUrl(url: String) {
         val client = session.heosClient ?: return
-        val playerId = pid ?: return
         viewModelScope.launch {
+            val playerId = session.resolvePid() ?: run {
+                _uiState.value = _uiState.value.copy(message = "No HEOS player found")
+                return@launch
+            }
             runCatching { client.playStream(playerId, url) }
                 .onFailure { e -> _uiState.value = _uiState.value.copy(message = e.message ?: "Stream failed") }
                 .onSuccess { _uiState.value = _uiState.value.copy(message = "Streaming (degraded bridge mode)") }

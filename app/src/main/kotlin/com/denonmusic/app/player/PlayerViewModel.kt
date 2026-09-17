@@ -179,22 +179,16 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
-     * Re-resolves the active HEOS player on every tick rather than trusting a pid cached once at
-     * startup. Confirmed live against a real AVR-X4500H: its local `player/get_players` can answer
-     * with an empty list - independent of any one client's session, and while the receiver's own
-     * audio, the official HEOS app, and even this app's own `get_music_sources`/`heart_beat` calls
-     * keep working fine - typically until the unit is power-cycled. A pid cached once at the first
-     * successful bootstrap and never re-checked left the app permanently stuck silently showing blank
-     * Now Playing with a pid that no longer answered to anything, the moment that happened.
+     * Re-resolves the active HEOS player on every tick via [HeosSession.resolvePid], which never
+     * caches - see its doc for the receiver behaviour that makes a latched pid a trap.
      *
      * Polling here both recovers automatically once the receiver's registry comes back and surfaces
      * the gap to the user in the meantime via [PlayerUiState.noHeosPlayerFound], instead of a
      * generic-looking "nothing playing".
      */
     private suspend fun resolvePlayerAndRefresh() {
-        val client = session.heosClient ?: return
-        val player = runCatching { client.getPlayers() }.getOrNull()?.firstOrNull()
-        if (player == null) {
+        val playerPid = session.resolvePid()
+        if (playerPid == null) {
             if (!_uiState.value.noHeosPlayerFound) {
                 eventsJob?.cancel()
                 _uiState.value = _uiState.value.copy(
@@ -207,11 +201,11 @@ class PlayerViewModel @Inject constructor(
             }
             return
         }
-        val recovered = _uiState.value.pid != player.pid
-        _uiState.value = _uiState.value.copy(pid = player.pid, noHeosPlayerFound = false)
-        if (recovered) subscribeEvents(player.pid)
-        refreshAll(player.pid)
-        refreshQueue(player.pid)
+        val recovered = _uiState.value.pid != playerPid
+        _uiState.value = _uiState.value.copy(pid = playerPid, noHeosPlayerFound = false)
+        if (recovered) subscribeEvents(playerPid)
+        refreshAll(playerPid)
+        refreshQueue(playerPid)
     }
 
     private suspend fun refreshAll(pid: String) {

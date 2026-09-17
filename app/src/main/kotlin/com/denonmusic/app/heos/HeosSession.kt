@@ -50,6 +50,38 @@ class HeosSession @Inject constructor() {
 
     val events: SharedFlow<HeosFrame>? get() = eventConnection?.events
 
+    @Volatile
+    private var _lastKnownPid: String? = null
+
+    /**
+     * The pid the last [resolvePid] saw, for callers that need "do we have a player at all" without
+     * spending a round trip - a UI gate, say. Never use it to address a command: see [resolvePid].
+     */
+    val lastKnownPid: String? get() = _lastKnownPid
+
+    /**
+     * Asks the receiver which player to address, every time, and deliberately does not fall back to
+     * [lastKnownPid] on failure.
+     *
+     * Caching this once is a trap the app has already fallen into twice. Confirmed live against a
+     * real AVR-X4500H: its `player/get_players` can start answering with an empty list - independent
+     * of any one client's session, and while the receiver's own audio, the official HEOS app, and
+     * even this app's own `get_music_sources`/`heart_beat` keep working - typically staying that way
+     * until the unit is power-cycled. A pid cached at first bootstrap and never re-checked leaves
+     * every command aimed at a pid that no longer answers to anything, with no error to show for it.
+     *
+     * One `get_players` round trip is cheap next to the command that follows it, and returning null
+     * when the registry is empty lets each caller surface the gap rather than silently no-op. This
+     * lives on the session, the one object every control surface already injects, so there is nowhere
+     * left for a per-surface cache to grow back.
+     */
+    suspend fun resolvePid(): String? {
+        val client = client ?: return null
+        val pid = runCatching { client.getPlayers() }.getOrNull()?.firstOrNull()?.pid
+        _lastKnownPid = pid
+        return pid
+    }
+
     fun start(host: String) {
         if (_state.value.let { it is HeosConnectionState.Connected && it.host == host }) return
         sessionJob?.cancel()
@@ -62,6 +94,7 @@ class HeosSession @Inject constructor() {
         eventConnection?.close()
         commandConnection?.close()
         client = null
+        _lastKnownPid = null
         _state.value = HeosConnectionState.Disconnected
     }
 
@@ -92,6 +125,7 @@ class HeosSession @Inject constructor() {
                 eventConnection = null
                 commandConnection = null
                 client = null
+                _lastKnownPid = null
             }
 
             attempt++

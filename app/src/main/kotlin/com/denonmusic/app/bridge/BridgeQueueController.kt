@@ -36,7 +36,6 @@ class BridgeQueueController @Inject constructor(
     private val _state = MutableStateFlow(BridgeQueueState())
     val state: StateFlow<BridgeQueueState> = _state.asStateFlow()
 
-    private var pid: String? = null
     private var eventsJob: Job? = null
     private var playJob: Job? = null
 
@@ -141,19 +140,11 @@ class BridgeQueueController @Inject constructor(
         }
     }
 
-    private suspend fun resolvePid(): String? {
-        pid?.let { return it }
-        val client = heosSession.heosClient ?: return null
-        val resolved = runCatching { client.getPlayers() }.getOrNull()?.firstOrNull()?.pid
-        pid = resolved
-        return resolved
-    }
-
     private fun playCurrent() {
         playJob?.cancel()
         val item = _state.value.currentItem ?: return
         playJob = scope.launch {
-            val playerId = resolvePid() ?: return@launch
+            val playerId = heosSession.resolvePid() ?: return@launch
             val url = smbBridgeService.urlFor(item.path) ?: return@launch
             currentTrackStartedAtMs = System.currentTimeMillis()
             runCatching { heosSession.heosClient?.playStream(playerId, url) }
