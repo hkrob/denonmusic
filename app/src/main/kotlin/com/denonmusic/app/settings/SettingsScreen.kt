@@ -3,6 +3,8 @@ package com.denonmusic.app.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -34,7 +38,25 @@ import com.denonmusic.app.lancontrol.LanControlStatus
 import com.denonmusic.app.ui.Winamp
 import com.denonmusic.avr.DiscoveredAvr
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Denon `SI` mnemonics common across the AVR-X line, per Denon's published IP control protocol. */
+private val COMMON_AVR_INPUTS = listOf(
+    "NET" to "Network / HEOS",
+    "CD" to "CD",
+    "TUNER" to "Tuner",
+    "DVD" to "DVD",
+    "BD" to "Blu-ray",
+    "TV" to "TV",
+    "SAT/CBL" to "Satellite / Cable",
+    "MPLAY" to "Media Player",
+    "GAME" to "Game",
+    "AUX1" to "Aux 1",
+    "AUX2" to "Aux 2",
+    "PHONO" to "Phono",
+    "BT" to "Bluetooth",
+    "USB/IPOD" to "USB / iPod",
+)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val state by viewModel.settingsState.collectAsState()
@@ -84,6 +106,25 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             SectionLabel("RECEIVER")
             LabeledField("AVR / HEOS host", avrHost, { avrHost = it })
             LabeledField("Input mnemonic (e.g. NET)", inputMnemonic, { inputMnemonic = it })
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(bottom = 8.dp),
+            ) {
+                COMMON_AVR_INPUTS.forEach { (mnemonic, label) ->
+                    FilterChip(
+                        selected = inputMnemonic == mnemonic,
+                        onClick = {
+                            inputMnemonic = mnemonic
+                            viewModel.setAvrInputMnemonic(mnemonic)
+                        },
+                        label = { Text(label, style = Winamp.smallStyle) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Winamp.Green,
+                            selectedLabelColor = Winamp.Background,
+                        ),
+                    )
+                }
+            }
             TextButton(onClick = {
                 if (avrHost.isNotBlank()) viewModel.setAvrHost(avrHost.trim())
                 if (inputMnemonic.isNotBlank()) viewModel.setAvrInputMnemonic(inputMnemonic.trim())
