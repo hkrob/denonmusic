@@ -10,7 +10,7 @@ import com.denonmusic.data.browse.BrowseStackEntity
 import com.denonmusic.data.settings.SettingsRepository
 import com.denonmusic.heos.AddCriteria
 import com.denonmusic.heos.BrowseItem
-import com.denonmusic.heos.HeosClient
+import com.denonmusic.heos.QueueTargetResolver
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -208,14 +208,15 @@ class BrowseViewModel @Inject constructor(
      * Walks [current]'s whole subtree to gather everything queueable, not just what HEOS itself
      * marks playable at this level - a multi-disc album (`CD1`/`CD2` subfolders, no tracks at the
      * album's own level) never gets the server's own "playable container" flag, so a plain
-     * `addToQueue(cid=current.cid)` would silently do nothing for it. See [collectQueueTargets].
+     * `addToQueue(cid=current.cid)` would silently do nothing for it. See
+     * [QueueTargetResolver.collect], which the LAN control API shares.
      */
     fun playAllCurrentContainer(action: QueueAction) {
         val client = session.heosClient ?: return
         val playerId = pid ?: return
         val current = _uiState.value.breadcrumb.lastOrNull() ?: return
         viewModelScope.launch {
-            val targets = runCatching { collectQueueTargets(client, current.sid, current.cid) }
+            val targets = runCatching { QueueTargetResolver.collect(client, current.sid, current.cid) }
                 .getOrElse { e ->
                     _uiState.value = _uiState.value.copy(message = e.message ?: "Couldn't gather tracks")
                     return@launch
@@ -224,9 +225,10 @@ class BrowseViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(message = "Nothing playable found")
                 return@launch
             }
-            if (targets.size > MAX_QUEUE_TARGETS) {
+            if (targets.size > QueueTargetResolver.DEFAULT_MAX_QUEUE_TARGETS) {
                 _uiState.value = _uiState.value.copy(
-                    message = "Too many items to queue at once (limit $MAX_QUEUE_TARGETS) - open a smaller folder",
+                    message = "Too many items to queue at once " +
+                        "(limit ${QueueTargetResolver.DEFAULT_MAX_QUEUE_TARGETS}) - open a smaller folder",
                 )
                 return@launch
             }
@@ -246,47 +248,6 @@ class BrowseViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(message = "${action.label}: ${current.displayName}$parts")
             }
         }
-    }
-
-    private data class QueueTarget(val sid: String, val cid: String, val mid: String?)
-
-    /**
-     * Recursively resolves every leaf under `sid`/`cid` into something a single `addToQueue` call can
-     * take: a playable container (HEOS flattens its own tracks server-side - one call covers a whole
-     * album or disc), or, failing that, each of its tracks individually by `mid`. Bounded by
-     * [MAX_RECURSE_DEPTH]/[MAX_QUEUE_TARGETS] so a tap on a huge aggregate source (an artist index, a
-     * whole DLNA library) can't silently try to enqueue thousands of tracks.
-     */
-    private suspend fun collectQueueTargets(client: HeosClient, sid: String, cid: String?, depth: Int = 0): List<QueueTarget> {
-        if (depth > MAX_RECURSE_DEPTH) return emptyList()
-        val items = mutableListOf<BrowseItem>()
-        var isPlayable = false
-        client.browseAll(sid, cid).collect { page ->
-            items += page.items
-            isPlayable = isPlayable || page.isPlayableContainer
-        }
-        val subContainers = items.filter { it.isContainer && it.sid == null && it.cid != null }
-        if (subContainers.isEmpty()) {
-            return if (isPlayable && cid != null) {
-                listOf(QueueTarget(sid, cid, null))
-            } else {
-                items.filter { it.isTrack }.map { QueueTarget(sid, it.cid ?: cid.orEmpty(), it.mid) }
-            }
-        }
-        // A folder can hold direct tracks *and* subfolders at once - not just a multi-disc album's
-        // CD1/CD2, but also, confirmed live, an ordinary album folder with its tracks sitting right
-        // there alongside incidental non-audio subfolders (an "art"/"tech" pair for extras). Only
-        // ever recursing into subContainers here silently dropped every one of this level's own
-        // tracks whenever any subfolder existed at all - "Nothing playable found" on a folder with
-        // playable tracks plainly visible in the browse listing above it.
-        val results = items.filter { it.isTrack }
-            .map { QueueTarget(sid, it.cid ?: cid.orEmpty(), it.mid) }
-            .toMutableList()
-        for (sub in subContainers) {
-            results += collectQueueTargets(client, sid, sub.cid, depth + 1)
-            if (results.size > MAX_QUEUE_TARGETS) break
-        }
-        return results
     }
 
     fun dismissMessage() {
@@ -333,9 +294,4 @@ class BrowseViewModel @Inject constructor(
     }
 
     private fun String.toBridgeQueueItem() = BridgeQueueItem(path = this, displayName = substringAfterLast('/'))
-
-    private companion object {
-        const val MAX_RECURSE_DEPTH = 6
-        const val MAX_QUEUE_TARGETS = 300
-    }
 }

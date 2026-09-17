@@ -14,6 +14,7 @@ import com.denonmusic.heos.BrowseItem
 import com.denonmusic.heos.HeosClient
 import com.denonmusic.heos.PlayState
 import com.denonmusic.heos.QueueItem
+import com.denonmusic.heos.QueueTargetResolver
 import com.denonmusic.smb.SmbCredentials
 import com.denonmusic.smb.SmbEntry
 import com.denonmusic.smb.SmbOverlay
@@ -333,15 +334,23 @@ class LanControlManager @Inject constructor(
 
         beginProgress("Scanning library…")
         val targets = try {
-            runCatching { collectQueueTargets(client, sid, cid) }.getOrElse { e ->
+            runCatching {
+                QueueTargetResolver.collect(client, sid, cid) { gathered ->
+                    bumpProgress("Scanning library… ($gathered found)")
+                }
+            }.getOrElse { e ->
                 return LanControlResponse(500, """{"error":${jsonString(e.message ?: "couldn't gather tracks")}}""")
             }
         } finally {
             endProgress()
         }
         if (targets.isEmpty()) return LanControlResponse(404, """{"error":"nothing playable found"}""")
-        if (targets.size > MAX_QUEUE_TARGETS) {
-            return LanControlResponse(400, """{"error":"too many items to queue at once (limit $MAX_QUEUE_TARGETS) - open a smaller folder"}""")
+        if (targets.size > QueueTargetResolver.DEFAULT_MAX_QUEUE_TARGETS) {
+            return LanControlResponse(
+                400,
+                """{"error":"too many items to queue at once """ +
+                    """(limit ${QueueTargetResolver.DEFAULT_MAX_QUEUE_TARGETS}) - open a smaller folder"}""",
+            )
         }
         beginProgress("Queuing 0/${targets.size}…")
         try {
@@ -359,39 +368,6 @@ class LanControlManager @Inject constructor(
         // already-empty bridge queue on every iteration.
         bridgeQueueController.clear()
         return LanControlResponse.ok("""{"ok":true,"queued":${targets.size}}""")
-    }
-
-    private data class QueueTarget(val sid: String, val cid: String, val mid: String?)
-
-    private suspend fun collectQueueTargets(client: HeosClient, sid: String, cid: String?, depth: Int = 0): List<QueueTarget> {
-        if (depth > MAX_RECURSE_DEPTH) return emptyList()
-        val items = mutableListOf<BrowseItem>()
-        var isPlayable = false
-        client.browseAll(sid, cid).collect { page ->
-            items += page.items
-            isPlayable = isPlayable || page.isPlayableContainer
-        }
-        bumpProgress("Scanning library…")
-        val subContainers = items.filter { it.isContainer && it.sid == null && it.cid != null }
-        if (subContainers.isEmpty()) {
-            return if (isPlayable && cid != null) {
-                listOf(QueueTarget(sid, cid, null))
-            } else {
-                items.filter { it.isTrack }.map { QueueTarget(sid, it.cid ?: cid.orEmpty(), it.mid) }
-            }
-        }
-        // See BrowseViewModel.collectQueueTargets's own comment - a folder can hold direct tracks
-        // and subfolders at once (an album's own tracks alongside an incidental "art"/"tech" extras
-        // folder, not just a multi-disc CD1/CD2 split), so this level's own tracks must be collected
-        // too, not just whatever the subfolders contain.
-        val results = items.filter { it.isTrack }
-            .map { QueueTarget(sid, it.cid ?: cid.orEmpty(), it.mid) }
-            .toMutableList()
-        for (sub in subContainers) {
-            results += collectQueueTargets(client, sid, sub.cid, depth + 1)
-            if (results.size > MAX_QUEUE_TARGETS) break
-        }
-        return results
     }
 
     private fun parseAddCriteria(request: LanControlRequest): AddCriteria? =
@@ -516,8 +492,6 @@ class LanControlManager @Inject constructor(
     companion object {
         /** Fixed and unlikely to collide with anything else this app or a common LAN service uses. */
         const val LAN_CONTROL_PORT: Int = 8901
-        private const val MAX_RECURSE_DEPTH = 6
-        private const val MAX_QUEUE_TARGETS = 300
     }
 }
 
