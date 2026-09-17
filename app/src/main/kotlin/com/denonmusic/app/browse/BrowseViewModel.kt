@@ -273,7 +273,15 @@ class BrowseViewModel @Inject constructor(
                 items.filter { it.isTrack }.map { QueueTarget(sid, it.cid ?: cid.orEmpty(), it.mid) }
             }
         }
-        val results = mutableListOf<QueueTarget>()
+        // A folder can hold direct tracks *and* subfolders at once - not just a multi-disc album's
+        // CD1/CD2, but also, confirmed live, an ordinary album folder with its tracks sitting right
+        // there alongside incidental non-audio subfolders (an "art"/"tech" pair for extras). Only
+        // ever recursing into subContainers here silently dropped every one of this level's own
+        // tracks whenever any subfolder existed at all - "Nothing playable found" on a folder with
+        // playable tracks plainly visible in the browse listing above it.
+        val results = items.filter { it.isTrack }
+            .map { QueueTarget(sid, it.cid ?: cid.orEmpty(), it.mid) }
+            .toMutableList()
         for (sub in subContainers) {
             results += collectQueueTargets(client, sid, sub.cid, depth + 1)
             if (results.size > MAX_QUEUE_TARGETS) break

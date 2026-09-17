@@ -380,7 +380,13 @@ class LanControlManager @Inject constructor(
                 items.filter { it.isTrack }.map { QueueTarget(sid, it.cid ?: cid.orEmpty(), it.mid) }
             }
         }
-        val results = mutableListOf<QueueTarget>()
+        // See BrowseViewModel.collectQueueTargets's own comment - a folder can hold direct tracks
+        // and subfolders at once (an album's own tracks alongside an incidental "art"/"tech" extras
+        // folder, not just a multi-disc CD1/CD2 split), so this level's own tracks must be collected
+        // too, not just whatever the subfolders contain.
+        val results = items.filter { it.isTrack }
+            .map { QueueTarget(sid, it.cid ?: cid.orEmpty(), it.mid) }
+            .toMutableList()
         for (sub in subContainers) {
             results += collectQueueTargets(client, sid, sub.cid, depth + 1)
             if (results.size > MAX_QUEUE_TARGETS) break
