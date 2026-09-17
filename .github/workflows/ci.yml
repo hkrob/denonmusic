@@ -27,15 +27,22 @@ jobs:
       # The protocol modules deliberately carry no Android dependencies, so they build and test
       # without an SDK. Keeping this a separate job means a protocol regression is reported as
       # such rather than buried in an Android build log.
+      #
+      # All three SDK-free modules run here. :app and :core:data are deliberately absent - they are
+      # Android-gated in settings.gradle.kts and aren't even configured without an SDK, so they run
+      # in the `android` job below instead.
       - name: Run JVM tests
-        run: ./gradlew :core:heos:test --stacktrace
+        run: ./gradlew :core:heos:test :core:avr:test :core:smb:test --stacktrace
 
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: protocol-test-report
-          path: core/heos/build/reports/tests/test
+          path: |
+            core/heos/build/reports/tests/test
+            core/avr/build/reports/tests/test
+            core/smb/build/reports/tests/test
           if-no-files-found: ignore
 
   probe:
@@ -79,6 +86,20 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         if: steps.app.outputs.present == 'true'
+
+      # The Android-gated modules' unit tests belong here rather than in the `protocol` job: that
+      # runner has no SDK, so settings.gradle.kts doesn't even include :app/:core:data there.
+      - name: Run Android-module unit tests
+        if: steps.app.outputs.present == 'true'
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: Upload Android test report
+        if: always() && steps.app.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-test-report
+          path: app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: ignore
 
       - name: Assemble debug
         if: steps.app.outputs.present == 'true'
