@@ -41,6 +41,12 @@ jobs:
           cache: gradle
 
       - uses: android-actions/setup-android@v3
+        with:
+          # Google removed the legacy standalone `tools` package (default: "tools platform-tools")
+          # from its SDK repository around 2026-09-15; requesting it now hard-fails sdkmanager
+          # before this action gets to installing cmdline-tools. platform-tools is all this
+          # workflow actually needs - build-tools/platforms are installed explicitly below.
+          packages: 'platform-tools'
 
       - name: Install the SDK packages this project compiles against
         run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0" > /dev/null

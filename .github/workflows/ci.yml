@@ -73,6 +73,9 @@ jobs:
 
       - uses: android-actions/setup-android@v3
         if: steps.app.outputs.present == 'true'
+        with:
+          # See .github/workflows/release.yml for why this can't be the action's own default.
+          packages: 'platform-tools'
 
       - uses: gradle/actions/setup-gradle@v4
         if: steps.app.outputs.present == 'true'
