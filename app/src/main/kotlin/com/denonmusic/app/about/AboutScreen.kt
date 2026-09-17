@@ -52,6 +52,13 @@ import com.denonmusic.app.update.UpdateViewModel
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.3" to listOf(
+        "Fixed Now Playing showing a stale or wrong track after a bridge-mode (SMB) queue finished or was replaced from the LAN control API.",
+        "Fixed \"Nothing playable found\" on Play All for a folder containing both tracks and subfolders.",
+        "The app now recovers automatically if the receiver's HEOS player list goes empty, instead of getting stuck.",
+        "Track titles with an ampersand from a DLNA/Plex source no longer show up mangled (e.g. \"Girls &amp; Boys\" instead of \"Girls & Boys\").",
+        "Added the NeuralX surround mode, fixed a chip label wrapping oddly on the About screen, and added a visible GitHub link on the About screen.",
+    ),
     "0.1.2" to listOf(
         "Fixed a crash-on-launch loop when the last-visited browse folder became unreachable (server reindex, share rename, or a transient HEOS error) - the app now backs out to a working folder instead of crashing every time it reconnects.",
     ),
