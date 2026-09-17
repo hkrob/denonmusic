@@ -64,7 +64,6 @@ class LanControlManager @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var started = false
     private var server: LanControlServer? = null
-    private var cachedSid: String? = null
 
     // Progress for whatever folder-wide play/queue walk (SMB or HEOS) is currently running, if any -
     // polled by the web UI via GET /progress so a big folder's tens-of-seconds walk shows live
@@ -176,14 +175,6 @@ class LanControlManager @Inject constructor(
         }
     }
 
-    /** Same latch-onto-the-local-source behaviour as [com.denonmusic.app.browse.BrowseViewModel]. */
-    private suspend fun resolveSid(client: HeosClient): String? {
-        cachedSid?.let { return it }
-        val sid = runCatching { sourceRepository.detectAndPersist(client) }.getOrNull()?.sid
-        cachedSid = sid
-        return sid
-    }
-
     private suspend fun statusResponse(client: HeosClient, pid: String): LanControlResponse {
         val nowPlaying = runCatching { client.getNowPlaying(pid) }.getOrNull()
         val playState = runCatching { client.getPlayState(pid) }.getOrNull()
@@ -274,7 +265,7 @@ class LanControlManager @Inject constructor(
      * carries the `sid`/`cid` needed to browse into it, so this endpoint itself is stateless.
      */
     private suspend fun browseResponse(client: HeosClient, request: LanControlRequest): LanControlResponse {
-        val sid = request.query["sid"] ?: resolveSid(client)
+        val sid = request.query["sid"] ?: sourceRepository.resolveCachedSid(client)
             ?: return LanControlResponse(503, """{"error":"no queueable music source found"}""")
         val cid = request.query["cid"]
         val page = runCatching { client.browse(sid, cid) }.getOrElse { e ->
