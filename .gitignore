@@ -17,6 +17,9 @@ captures/
 *.iml
 .kotlin/
 
+# Claude Code session state
+.claude/
+
 # OS
 .DS_Store
 
