@@ -8,7 +8,6 @@ import com.denonmusic.smb.SmbCredentials
 import com.denonmusic.smb.SmbEntry
 import com.denonmusic.smb.SmbOverlay
 import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import javax.inject.Inject
 
 data class SmbBrowseUiState(
     /** Folder names from the share root down to the current directory; empty means the root. */

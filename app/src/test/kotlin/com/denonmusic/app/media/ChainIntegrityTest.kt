@@ -3,9 +3,9 @@ package com.denonmusic.app.media
 import com.denonmusic.avr.SignalType
 import com.denonmusic.smb.AudioContainer
 import com.denonmusic.smb.AudioFormatInfo
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import org.junit.jupiter.api.Test
 
 class ChainIntegrityTest {
 

@@ -1,7 +1,7 @@
 package com.denonmusic.smb
 
-import kotlin.test.assertEquals
 import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
 
 /**
  * Regression coverage for the ordering bug found testing [SmbOverlay.listDirectory] against a real

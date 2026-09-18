@@ -10,10 +10,10 @@ import com.denonmusic.data.browse.toCacheJson
 import com.denonmusic.heos.BrowseItem
 import com.denonmusic.heos.BrowseOption
 import com.denonmusic.heos.HeosClient
-import javax.inject.Inject
-import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import javax.inject.Inject
+import javax.inject.Singleton
 
 data class BrowseLevel(
     val sid: String,

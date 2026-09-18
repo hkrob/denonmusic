@@ -1,12 +1,12 @@
 package com.denonmusic.avr
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.SocketTimeoutException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /** One receiver found on the LAN: [host] to store as `avrHost`, [label] to tell devices apart in a UI. */
 data class DiscoveredAvr(val host: String, val label: String)

@@ -1,10 +1,10 @@
 package com.denonmusic.smb
 
-import java.io.InputStream
 import jcifs.CIFSContext
 import jcifs.context.SingletonContext
 import jcifs.smb.NtlmPasswordAuthenticator
 import jcifs.smb.SmbFile
+import java.io.InputStream
 
 data class SmbCredentials(val host: String, val share: String, val username: String, val password: String)
 

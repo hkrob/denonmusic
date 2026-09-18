@@ -42,6 +42,15 @@ ktlint_standard_string-template-indent = disabled
 ktlint_standard_chain-method-continuation = disabled
 ktlint_standard_blank-line-before-declaration = disabled
 
+# These four were added after seeing what ktlintFormat actually produced with them on, which was
+# worse than the code it replaced in every single case: `!=` split from its `null` onto the next
+# line, and a `joinToString { it.name }` inside a raw-string error message exploded across four
+# lines mid-template. Long expressions here are long because the alternatives read worse.
+ktlint_standard_binary-expression-wrapping = disabled
+ktlint_standard_if-else-wrapping = disabled
+ktlint_standard_multiline-if-else = disabled
+ktlint_standard_function-literal = disabled
+
 # Inline `/* field */` labels are how the binary-format test fixtures name the bytes they're
 # assembling (`beIntBytes(0) /* version/flags */ + beIntBytes(1) /* entry_count */`). Hoisting those
 # onto their own lines would separate each label from the field it names.

@@ -2,9 +2,12 @@ package com.denonmusic.app.player
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -19,9 +22,6 @@ import com.denonmusic.app.ui.EqualizerBars
 import com.denonmusic.app.ui.Winamp
 import com.denonmusic.app.ui.bevel
 import com.denonmusic.heos.PlayState
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 
 /**
  * Persistent strip above the tab content on every screen except Now Playing itself. Tapping it

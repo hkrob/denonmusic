@@ -3,9 +3,6 @@ package com.denonmusic.app.heos
 import com.denonmusic.heos.HeosClient
 import com.denonmusic.heos.HeosConnection
 import com.denonmusic.heos.HeosFrame
-import javax.inject.Inject
-import javax.inject.Singleton
-import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,6 +13,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlin.random.Random
 
 sealed interface HeosConnectionState {
     data object Disconnected : HeosConnectionState

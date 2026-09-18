@@ -49,7 +49,6 @@ import com.denonmusic.app.player.PlayerViewModel
 import com.denonmusic.app.player.icon
 import com.denonmusic.app.player.next
 import com.denonmusic.app.ui.Winamp
-import com.denonmusic.app.ui.bevel
 import com.denonmusic.heos.QueueItem
 
 @OptIn(ExperimentalMaterial3Api::class)

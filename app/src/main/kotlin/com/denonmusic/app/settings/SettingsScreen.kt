@@ -36,7 +36,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.denonmusic.app.lancontrol.LanControlStatus
 import com.denonmusic.app.ui.Winamp
-import com.denonmusic.avr.DiscoveredAvr
 
 /** Denon `SI` mnemonics common across the AVR-X line, per Denon's published IP control protocol. */
 private val COMMON_AVR_INPUTS = listOf(

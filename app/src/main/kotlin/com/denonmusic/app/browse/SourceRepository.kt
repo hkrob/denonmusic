@@ -3,9 +3,9 @@ package com.denonmusic.app.browse
 import com.denonmusic.data.settings.SettingsRepository
 import com.denonmusic.heos.HeosClient
 import com.denonmusic.heos.MusicSource
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.flow.first
 
 /**
  * Ranks `browse/get_music_sources` per the plan: sid 1024 ("Local USB Media / Local DLNA servers",

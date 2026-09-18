@@ -1,14 +1,13 @@
 package com.denonmusic.smb
 
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.Socket
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.Timeout
 
 @Timeout(10)
 class SmbBridgeServerTest {

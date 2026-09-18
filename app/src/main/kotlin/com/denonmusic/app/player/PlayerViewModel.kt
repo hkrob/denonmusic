@@ -17,7 +17,6 @@ import com.denonmusic.heos.PlayState
 import com.denonmusic.heos.QueueItem
 import com.denonmusic.heos.RepeatMode
 import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +26,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 data class Progress(val positionMillis: Long, val durationMillis: Long)
 
@@ -433,6 +433,7 @@ class PlayerViewModel @Inject constructor(
 
     private companion object {
         const val RESYNC_INTERVAL_MS = 15_000L
+
         /** Tighter than [RESYNC_INTERVAL_MS] while no player is found, so recovery (e.g. a power cycle) shows up promptly. */
         const val NO_PLAYER_RETRY_INTERVAL_MS = 5_000L
     }

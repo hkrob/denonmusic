@@ -1,11 +1,11 @@
 package com.denonmusic.smb
 
+import org.junit.jupiter.api.Test
 import java.io.ByteArrayInputStream
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import org.junit.jupiter.api.Test
 
 class Mp3HeaderParserTest {
 

@@ -1,11 +1,11 @@
 package com.denonmusic.app.heos
 
+import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlinx.coroutines.runBlocking
-import org.junit.jupiter.api.Test
 
 /**
  * Pins the invariant the whole class exists for: real HEOS playback starting relinquishes bridge-mode

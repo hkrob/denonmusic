@@ -19,10 +19,6 @@ import com.denonmusic.heos.QueueTargetResolver
 import com.denonmusic.smb.SmbCredentials
 import com.denonmusic.smb.SmbEntry
 import com.denonmusic.smb.SmbOverlay
-import java.net.Inet4Address
-import java.net.NetworkInterface
-import javax.inject.Inject
-import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,6 +31,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import java.net.Inet4Address
+import java.net.NetworkInterface
+import javax.inject.Inject
+import javax.inject.Singleton
 
 sealed interface LanControlStatus {
     data object Off : LanControlStatus
@@ -73,7 +73,9 @@ class LanControlManager @Inject constructor(
     // the walk, read from whichever client thread is polling - see LanControlServer's thread-per-
     // connection model.
     @Volatile private var progressActive = false
+
     @Volatile private var progressCount = 0
+
     @Volatile private var progressMessage = ""
 
     private val _status = MutableStateFlow<LanControlStatus>(LanControlStatus.Off)
@@ -157,8 +159,12 @@ class LanControlManager @Inject constructor(
             // playPrevious - skip has to step the bridge's own client-side queue instead while it's what's
             // actually driving the receiver; the real player/play_next would silently act on whatever real
             // queue was last loaded, not the bridge track the user (and the phone app) currently sees.
-            "POST" to "/next" -> ok { if (bridgeQueueController.state.value.currentItem != null) bridgeQueueController.next() else client.playNext(pid) }
-            "POST" to "/previous" -> ok { if (bridgeQueueController.state.value.currentItem != null) bridgeQueueController.previous() else client.playPrevious(pid) }
+            "POST" to "/next" -> ok {
+                if (bridgeQueueController.state.value.currentItem != null) bridgeQueueController.next() else client.playNext(pid)
+            }
+            "POST" to "/previous" -> ok {
+                if (bridgeQueueController.state.value.currentItem != null) bridgeQueueController.previous() else client.playPrevious(pid)
+            }
             "POST" to "/volume" -> withIntParam(request, "level") { level -> client.setVolume(pid, level) }
             "POST" to "/mute" -> withBoolParam(request, "on") { on -> client.setMute(pid, on) }
             // Via playbackStarter, which relinquishes the bridge queue's ownership of Now
@@ -205,7 +211,10 @@ class LanControlManager @Inject constructor(
             append(""""input":${jsonString(inputSource)},""")
             append(""""signalType":${jsonString(signalType?.name)},""")
             append(""""sampleRateKhz":${sampleRateKhz ?: "null"},""")
-            append(""""outputChannels":${outputChannels.joinToString(prefix = "[", postfix = "]") { """{"code":${jsonString(it.code)},"level":${jsonString(it.level)}}""" }},""")
+            val channelsJson = outputChannels.joinToString(prefix = "[", postfix = "]") {
+                """{"code":${jsonString(it.code)},"level":${jsonString(it.level)}}"""
+            }
+            append(""""outputChannels":$channelsJson,""")
             append(""""bitPerfectPolicy":${jsonString(bitPerfectPolicy)}""")
             append("}")
         }
@@ -253,7 +262,10 @@ class LanControlManager @Inject constructor(
     private suspend fun handleBitPerfect(request: LanControlRequest): LanControlResponse {
         val name = request.query["policy"]
         val policy = BitPerfectPolicy.entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
-            ?: return LanControlResponse(400, """{"error":"unknown policy, expected one of ${BitPerfectPolicy.entries.joinToString { it.name }}"}""")
+        if (policy == null) {
+            val known = BitPerfectPolicy.entries.joinToString { it.name }
+            return LanControlResponse(400, """{"error":"unknown policy, expected one of $known"}""")
+        }
         settings.setBitPerfectPolicy(policy.name)
         val client = avrSession.avrClient
         return ok { client?.let { it.applyBitPerfectPolicy(policy) } }
@@ -350,8 +362,10 @@ class LanControlManager @Inject constructor(
     private fun parseAddCriteria(request: LanControlRequest): AddCriteria? =
         request.query["criteria"]?.let { name -> AddCriteria.entries.firstOrNull { it.name.equals(name, ignoreCase = true) } }
 
-    private fun badCriteria() =
-        LanControlResponse(400, """{"error":"missing or invalid 'criteria', expected one of ${AddCriteria.entries.joinToString { it.name }}"}""")
+    private fun badCriteria(): LanControlResponse {
+        val known = AddCriteria.entries.joinToString { it.name }
+        return LanControlResponse(400, """{"error":"missing or invalid 'criteria', expected one of $known"}""")
+    }
 
     /** `null` when no share is configured yet - same check [com.denonmusic.app.bridge.SmbBrowseViewModel] makes. */
     private suspend fun smbOverlay(): SmbOverlay? {

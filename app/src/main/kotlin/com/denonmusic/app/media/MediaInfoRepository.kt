@@ -6,10 +6,10 @@ import com.denonmusic.data.media.toCacheEntity
 import com.denonmusic.smb.AudioFormatInfo
 import com.denonmusic.smb.SmbCredentials
 import com.denonmusic.smb.SmbOverlay
-import javax.inject.Inject
-import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Bridges the network-facing [SmbOverlay] and the Room cache in `:core:data`, keyed by

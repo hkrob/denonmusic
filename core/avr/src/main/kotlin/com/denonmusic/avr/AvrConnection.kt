@@ -1,12 +1,5 @@
 package com.denonmusic.avr
 
-import java.io.BufferedReader
-import java.io.IOException
-import java.io.InputStreamReader
-import java.io.Writer
-import java.net.InetSocketAddress
-import java.net.Socket
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +15,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import java.io.BufferedReader
+import java.io.IOException
+import java.io.InputStreamReader
+import java.io.Writer
+import java.net.InetSocketAddress
+import java.net.Socket
 
 /**
  * One telnet socket to the Denon AVR control port.

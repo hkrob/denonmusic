@@ -3,8 +3,6 @@ package com.denonmusic.app.bridge
 import com.denonmusic.app.heos.HeosConnectionState
 import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.heos.RepeatMode
-import javax.inject.Inject
-import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -14,6 +12,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * The phase-6 bridge's own queue: `play_stream` starts exactly one stream with no real queue behind

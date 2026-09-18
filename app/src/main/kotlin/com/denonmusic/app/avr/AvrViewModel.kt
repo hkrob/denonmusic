@@ -10,7 +10,6 @@ import com.denonmusic.avr.SignalType
 import com.denonmusic.avr.SoundMode
 import com.denonmusic.data.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 data class AvrUiState(
     val connection: AvrConnectionState = AvrConnectionState.Disconnected,

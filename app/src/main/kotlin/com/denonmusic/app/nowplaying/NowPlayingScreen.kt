@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -30,7 +31,6 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,7 +48,6 @@ import com.denonmusic.app.ui.Winamp
 import com.denonmusic.app.ui.bevel
 import com.denonmusic.app.ui.fileTypeLabel
 import com.denonmusic.heos.PlayState
-import com.denonmusic.heos.RepeatMode
 import com.denonmusic.smb.AudioFormatInfo
 import java.util.Locale
 

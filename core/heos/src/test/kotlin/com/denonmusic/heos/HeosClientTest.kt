@@ -1,21 +1,21 @@
 package com.denonmusic.heos
 
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.onSubscription
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
  * End-to-end tests over a real loopback socket against [FakeHeosServer].
@@ -62,7 +62,8 @@ class HeosClientTest {
             payload = """[
                 {"name":"Pandora","image_url":"http://x/p.png","type":"music_service","sid":"1","available":"true"},
                 {"name":"Local Music","image_url":"http://x/l.png","type":"heos_server","sid":"1024","available":"true"}
-            ]""".trimIndent(),
+            ]
+            """.trimIndent(),
         )
         connection.connect()
 

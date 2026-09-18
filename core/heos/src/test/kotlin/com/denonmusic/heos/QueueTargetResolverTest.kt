@@ -1,12 +1,12 @@
 package com.denonmusic.heos
 
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * Drives [QueueTargetResolver] against [FakeHeosServer] over a real loopback socket, with a stubbed

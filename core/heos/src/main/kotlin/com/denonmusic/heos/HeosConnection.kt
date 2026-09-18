@@ -1,12 +1,5 @@
 package com.denonmusic.heos
 
-import java.io.BufferedReader
-import java.io.IOException
-import java.io.InputStreamReader
-import java.io.Writer
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -23,6 +16,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import java.io.BufferedReader
+import java.io.IOException
+import java.io.InputStreamReader
+import java.io.Writer
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * A single socket to the HEOS CLI port.

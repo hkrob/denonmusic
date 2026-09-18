@@ -1,8 +1,8 @@
 package com.denonmusic.avr
 
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
-import org.junit.jupiter.api.Test
 
 class SsdpDiscoveryTest {
 

@@ -13,7 +13,6 @@ import com.denonmusic.heos.AddCriteria
 import com.denonmusic.heos.BrowseItem
 import com.denonmusic.heos.QueueTargetResolver
 import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +21,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 data class BrowseUiState(
     val connection: HeosConnectionState = HeosConnectionState.Disconnected,

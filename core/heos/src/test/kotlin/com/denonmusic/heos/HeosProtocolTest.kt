@@ -1,8 +1,8 @@
 package com.denonmusic.heos
 
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import org.junit.jupiter.api.Test
 
 class HeosProtocolTest {
 

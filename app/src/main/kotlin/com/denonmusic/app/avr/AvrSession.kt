@@ -2,9 +2,6 @@ package com.denonmusic.app.avr
 
 import com.denonmusic.avr.AvrClient
 import com.denonmusic.avr.AvrConnection
-import javax.inject.Inject
-import javax.inject.Singleton
-import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,6 +13,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlin.random.Random
 
 sealed interface AvrConnectionState {
     data object Disconnected : AvrConnectionState
