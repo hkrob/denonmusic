@@ -17,26 +17,44 @@ So an app that reads SMB on the phone and feeds the receiver URLs cannot play an
 there is a gap at every track change, playback stops when the phone sleeps or leaves the network,
 and DSD will not survive the trip.
 
-**This app therefore never touches the audio.** The receiver reads the files itself; the phone only
-browses, queues and controls. Force-stop the app mid-album and the music keeps playing. This is also
-what "no processing on the Android" means in practice - there is no decoder in the app at all.
+**The primary path therefore never touches the audio.** The receiver reads the files itself; the
+phone only browses, queues and controls. Force-stop the app mid-album and the music keeps playing.
+This is also what "no processing on the Android" means in practice - there is no decoder in the app
+at all.
+
+There is a second, deliberately secondary path for files HEOS hasn't indexed: the app reads them off
+the share and relays the bytes to the receiver over `play_stream`, stepping its own client-side queue
+at each track end. It still doesn't decode anything, but it does carry the audio, so it inherits
+every drawback in the table above. Use it to reach something the receiver can't see on its own, not
+to play an album.
 
 ## Repository layout
 
 ```
+app/            Compose UI, ViewModels, Hilt wiring, the SMB bridge queue, the LAN control API.
 core/heos/      HEOS CLI protocol: codec, socket, event stream, typed client.  Pure JVM.
+core/avr/       Raw Denon telnet control (port 23): power, input, sound mode, signal info.  Pure JVM.
+core/smb/       SMB access and audio header parsing (FLAC/DSF/DFF/WAV/MP3).  Pure JVM.
+core/data/      Room caches (browse listings, breadcrumb, media info) and DataStore settings.
 tools/probe.py  Protocol probe for answering open questions against a real receiver.
 ```
 
-`core/heos` has no Android dependencies on purpose, so the protocol layer builds and tests on any
+The three protocol modules have no Android dependencies on purpose, so they build and test on any
 JDK 17+ machine with no Android SDK installed:
 
 ```sh
-./gradlew :core:heos:test
+./gradlew :core:heos:test :core:avr:test :core:smb:test
 ```
 
-The Android modules are only configured when an SDK is present (`ANDROID_HOME`, `ANDROID_SDK_ROOT`
-or a `local.properties`), so the command above works anywhere.
+`app` and `core:data` are only configured when an SDK is present (`ANDROID_HOME`,
+`ANDROID_SDK_ROOT` or a `local.properties`), so the command above works anywhere. With an SDK:
+
+```sh
+./gradlew :app:testDebugUnitTest :core:heos:test :core:avr:test :core:smb:test
+```
+
+The Android Gradle plugin needs JDK 17 or newer; Android Studio's bundled JBR works if your system
+default is older.
 
 ## Getting your music to the receiver
 
@@ -60,9 +78,15 @@ Rows marked queueable support `browse/add_to_queue`, and therefore gapless playb
 
 In any other sound mode the receiver converts DSD to PCM so it can run its DSP. The app exposes a
 bit-perfect policy (off / auto Direct / auto Pure Direct) that sets the mode when playback starts,
-and cross-checks the result: the file's own header is read from SMB, the receiver is asked what it
-thinks it is receiving (`SSINFAISSIG`, `SSINFAISFSV`), and a mismatch is reported rather than
-ignored. A DSF file arriving as 176.4 kHz PCM means something in the chain transcoded it.
+and shows you the result rather than assuming it: the receiver is asked what it thinks it is
+receiving (`SSINFAISSIG`, `SSINFAISFSV`) and that appears in the Now Playing technical panel, next
+to the file's own header as read from SMB. A DSF file arriving as 176.4 kHz PCM means something in
+the chain transcoded it.
+
+The two are displayed side by side but not yet automatically compared - note that this receiver
+reports PCM for *all* network-sourced audio, because HEOS decodes internally before the amp section,
+so "DSD file, PCM at the amp" is expected for anything played through the HEOS queue and only means
+something has gone wrong for the bridge path.
 
 ## The probe
 
@@ -100,10 +124,44 @@ Versioned releases are published to GitHub Releases and the app checks there for
 the **Release** GitHub Action or `pwsh ./publish-release.ps1`.
 
 The keystore is never committed (`*.keystore`/`*.jks` are gitignored) and lives only as encrypted
-repository secrets during a build - see the linked doc before the first release, since it needs a
-one-time keystore + secrets setup that doesn't exist yet.
+repository secrets during a build - the linked doc covers that one-time setup, which is already in
+place for this repo.
+
+## Controlling it from a browser
+
+The app can also serve a small control API and a matching web UI over the LAN, so a laptop or a
+second phone can drive the receiver without installing anything. Off by default; enable it in
+Settings and set a password, which doubles as the API token. It listens on port **8901**.
+
+Visit `http://<phone-ip>:8901/` for the web UI - it mirrors the app's own tabs (Now Playing, Queue,
+AVR, Browse, Files) and prompts for the password. The page itself is served unauthenticated, since it
+can't know the token before you type it; every call it makes is gated.
+
+API clients send the password as an `X-Lan-Control-Token` header (or `?token=`, though that leaks
+into logs and shell history - prefer the header):
+
+```sh
+curl -H "X-Lan-Control-Token: $TOKEN" http://<phone-ip>:8901/status
+curl -H "X-Lan-Control-Token: $TOKEN" -X POST 'http://<phone-ip>:8901/volume?level=25'
+```
+
+| Route | What it does |
+|---|---|
+| `GET /status` | Now playing, transport state, volume, plus the AVR's power/input/sound-mode/signal info |
+| `GET /queue`, `POST /queue/play?qid=` | The real HEOS queue, and jumping to an item in it |
+| `POST /play`, `/pause`, `/stop`, `/next`, `/previous` | Transport |
+| `POST /volume?level=`, `/mute?on=` | Volume |
+| `GET /browse?sid=&cid=` | One level of the HEOS-indexed library; stateless, items carry their own ids |
+| `POST /browse/queue`, `/browse/playall` | Queue one item, or walk a whole subtree and queue all of it |
+| `GET /smb`, `POST /smb/play`, `/smb/queue` | The SMB fallback browser - works even with the receiver off |
+| `POST /power`, `/soundmode`, `/input`, `/bitperfect` | Direct AVR control |
+| `GET /progress` | Live progress of whatever folder-wide scan or queue walk is running |
+
+There is no rate limiting on failed auth, and the server refuses to start at all without a password
+set. It is meant for a trusted home LAN, not the open internet.
 
 ## Status
 
-Protocol layer and probe are in place and tested. The Android modules (browse, queue, now playing,
-AVR panel, SMB metadata overlay) are next.
+Shipping. The protocol layer, probe, and the full Android app (browse, queue, now playing, AVR panel,
+SMB bridge playback, metadata overlay, LAN control) are in place and released - see the About tab or
+GitHub Releases for the current version.
