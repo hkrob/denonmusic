@@ -45,6 +45,7 @@ import com.denonmusic.app.update.UpdatePrefsStore
 import com.denonmusic.app.update.UpdateScheduler
 import com.denonmusic.app.update.UpdateUiState
 import com.denonmusic.app.update.UpdateViewModel
+import java.util.Locale
 
 /**
  * Newest first; the release workflow (`.github/workflows/release.yml`) parses this list to source
@@ -258,10 +259,12 @@ private fun UpdateSection(viewModel: UpdateViewModel) {
     }
 }
 
+// Locale.US, matching TechnicalInfo.summary()'s own formatting: without it a German or French
+// device renders a download size as "1,5 GB", which reads as a thousands separator here.
 private fun formatBytes(bytes: Long): String = when {
-    bytes >= 1_000_000_000 -> String.format("%.1f GB", bytes / 1_000_000_000.0)
-    bytes >= 1_000_000 -> String.format("%.1f MB", bytes / 1_000_000.0)
-    bytes >= 1_000 -> String.format("%.0f KB", bytes / 1_000.0)
+    bytes >= 1_000_000_000 -> String.format(Locale.US, "%.1f GB", bytes / 1_000_000_000.0)
+    bytes >= 1_000_000 -> String.format(Locale.US, "%.1f MB", bytes / 1_000_000.0)
+    bytes >= 1_000 -> String.format(Locale.US, "%.0f KB", bytes / 1_000.0)
     else -> "$bytes B"
 }
 

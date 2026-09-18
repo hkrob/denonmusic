@@ -8,10 +8,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
-import java.net.URL
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 
 /** Tiny in-memory cache so navigating away and back doesn't refetch the same album art every time. */
 private object ArtworkCache {
@@ -23,6 +23,11 @@ private object ArtworkCache {
  * while pending or on failure - no placeholder image bundled just for this. Hand-rolled rather than
  * pulling in an image-loading library for the one thing this app needs from one.
  */
+// ProduceStateDoesNotAssignValue misfires here: `value` is assigned on every path, but the check
+// only recognises assignments it can see at the top level of the producer lambda, and these are
+// inside an `if`/`let` with early returns and behind a `withContext`. Verified by reducing the
+// producer to a single top-level `value = null`, which the check then accepted.
+@Suppress("ProduceStateDoesNotAssignValue")
 @Composable
 fun RemoteArtwork(url: String?, modifier: Modifier = Modifier, contentDescription: String? = null) {
     val bitmap by produceState<Bitmap?>(initialValue = url?.let { ArtworkCache.byUrl[it] }, key1 = url) {
@@ -42,6 +47,7 @@ fun RemoteArtwork(url: String?, modifier: Modifier = Modifier, contentDescriptio
 }
 
 /** Same idea as [RemoteArtwork] but for bytes already in hand - the bridge path's own file-side read. */
+@Suppress("ProduceStateDoesNotAssignValue") // Same false positive as above.
 @Composable
 fun LocalArtwork(bytes: ByteArray?, modifier: Modifier = Modifier, contentDescription: String? = null) {
     val bitmap by produceState<Bitmap?>(initialValue = null, key1 = bytes) {

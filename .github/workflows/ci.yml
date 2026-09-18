@@ -93,6 +93,22 @@ jobs:
         if: steps.app.outputs.present == 'true'
         run: ./gradlew :app:testDebugUnitTest --stacktrace
 
+      # Static analysis runs in this job, not `protocol`, because both halves need the full module
+      # set: without an SDK, settings.gradle.kts leaves :app and :core:data out of the build entirely,
+      # so a ktlintCheck over there would silently skip most of the codebase. ktlint's rules live in
+      # .editorconfig; Android Lint's severities in app/build.gradle.kts.
+      - name: Check formatting and lint
+        if: steps.app.outputs.present == 'true'
+        run: ./gradlew ktlintCheck :app:lintDebug --stacktrace
+
+      - name: Upload lint report
+        if: always() && steps.app.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+
       - name: Upload Android test report
         if: always() && steps.app.outputs.present == 'true'
         uses: actions/upload-artifact@v4

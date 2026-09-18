@@ -1,0 +1,55 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{kt,kts}]
+# intellij_idea, not ktlint_official: the latter's mandatory-wrapping rules would demand a thousand
+# reformats across working code and would break the deliberate line layout a lot of the commentary
+# here depends on. The point of having a linter at all is to catch drift, not to relitigate the style
+# the codebase already has.
+ktlint_code_style = intellij_idea
+max_line_length = 140
+
+# Note on imports: ktlint's default layout puts java/javax/kotlin last, which this codebase didn't.
+# Setting `ij_kotlin_imports_layout = *` to keep one flat alphabetical group would avoid a reshuffle,
+# but it also silently switches off `no-unused-imports` - verified here, and that rule immediately
+# found four dead imports. The rule is worth more than the ordering preference, so the default layout
+# stands and the reshuffle was taken once.
+
+# Compose composables are PascalCase by convention and JUnit test names here are backtick sentences.
+# Neither is a mistake, and the rule can't be auto-corrected, so it would just be permanent noise.
+ktlint_standard_function-naming = disabled
+
+# The wrapping rules, all off for one reason: this codebase's line layout is deliberate and carries
+# information, and every one of these rules wants to flatten it. parameter-list-wrapping collapses
+# multi-line constructors whose parameters each have their own KDoc; statement-wrapping explodes the
+# compact one-line `when` branches that make the LAN route table and the Compose callback blocks
+# readable as tables; the rest are the same trade in smaller ways. Formatting is not this project's
+# problem - the reason to run a linter here is the dead imports and real defects below.
+ktlint_standard_parameter-list-wrapping = disabled
+ktlint_standard_argument-list-wrapping = disabled
+ktlint_standard_statement-wrapping = disabled
+ktlint_standard_function-signature = disabled
+ktlint_standard_class-signature = disabled
+ktlint_standard_multiline-expression-wrapping = disabled
+ktlint_standard_string-template-indent = disabled
+ktlint_standard_chain-method-continuation = disabled
+ktlint_standard_blank-line-before-declaration = disabled
+
+# Inline `/* field */` labels are how the binary-format test fixtures name the bytes they're
+# assembling (`beIntBytes(0) /* version/flags */ + beIntBytes(1) /* entry_count */`). Hoisting those
+# onto their own lines would separate each label from the field it names.
+ktlint_standard_comment-wrapping = disabled
+
+[*.{yml,yaml,json}]
+indent_size = 2
+
+[*.py]
+indent_size = 4
+max_line_length = 100

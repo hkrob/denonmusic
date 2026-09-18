@@ -11,7 +11,6 @@ import com.denonmusic.data.settings.AppSettings
 import com.denonmusic.data.settings.SettingsRepository
 import com.denonmusic.smb.SmbCredentials
 import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import javax.inject.Inject
 
 sealed interface AvrDiscoveryUiState {
     data object Idle : AvrDiscoveryUiState
@@ -34,6 +34,9 @@ class SettingsViewModel @Inject constructor(
     private val lanControlManager: LanControlManager,
 ) : ViewModel() {
 
+    // Exposed as `settingsState`, not `settings`, only because the injected repository already owns
+    // that name in this class - so the usual backing-property pairing can't apply here.
+    @Suppress("ktlint:standard:backing-property-naming")
     private val _settings = MutableStateFlow(AppSettings())
     val settingsState: StateFlow<AppSettings> = _settings.asStateFlow()
 

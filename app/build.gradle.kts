@@ -24,6 +24,17 @@ android {
     namespace = "com.denonmusic.app"
     compileSdk = 36
 
+    lint {
+        // A lint error should mean "this code is wrong", so the build stops on one.
+        abortOnError = true
+        warningsAsErrors = false
+        // ...which is exactly why these three are off. They don't report anything about this code:
+        // they fire whenever someone else ships a release, so leaving them on would turn CI red on a
+        // schedule set by AndroidX's and AGP's calendars rather than by any change made here.
+        // Dependency upgrades are a deliberate act, not a build failure.
+        disable += setOf("GradleDependency", "AndroidGradlePluginVersion", "OldTargetApi")
+    }
+
     defaultConfig {
         applicationId = "com.denonmusic.app"
         minSdk = 26
