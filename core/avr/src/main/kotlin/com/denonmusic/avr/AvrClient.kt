@@ -124,11 +124,24 @@ class AvrClient(private val connection: AvrConnection) {
         else -> SignalType.Unknown
     }
 
-    /** `SSINFAISFSV ?` -> e.g. `SSINFAISFSV 441` meaning 44.1 kHz (value is kHz * 10). */
+    /**
+     * `SSINFAISFSV ?` reports the sample rate in two different encodings depending on which family
+     * it belongs to, confirmed live against the real AVR-X4500H: `SSINFAISFSV 441` for 44.1 kHz (the
+     * existing regression test), and - found via this project's own ChainIntegrity display falsely
+     * flagging a genuine 192 kHz FLAC as "resampled to 19.2 kHz" - `SSINFAISFSV 192` for 192 kHz, with
+     * no `*10` scaling at all.
+     *
+     * The two families never overlap in raw value: the 44.1 kHz-derived family (44.1/88.2/176.4/352.8)
+     * encodes as 441/882/1764/3528, all above 400; the 48 kHz-derived family (48/96/192/384) encodes
+     * as itself, all at or below 400. [DECODE_THRESHOLD] splits on that gap. Only the two endpoints
+     * (441, 192) have been observed against real hardware; 88.2/96/176.4/352.8/384 are inferred from
+     * the doubling relationship within each family, not independently confirmed.
+     */
     suspend fun sampleRateKhz(): Double? {
         val line = connection.query("SSINFAISFSV ?", "SSINFAISFSV")
         val digits = line.removePrefix("SSINFAISFSV").trim().takeWhile { it.isDigit() }
-        return digits.toIntOrNull()?.let { it / 10.0 }
+        val raw = digits.toIntOrNull() ?: return null
+        return if (raw > DECODE_THRESHOLD) raw / 10.0 else raw.toDouble()
     }
 
     /**
@@ -143,6 +156,9 @@ class AvrClient(private val connection: AvrConnection) {
 
     companion object {
         private const val VOLUME_FLOOR_DB = 80.0
+
+        /** See [sampleRateKhz]'s doc: splits the two `SSINFAISFSV` encodings (441 vs. 192). */
+        private const val DECODE_THRESHOLD = 400
 
         /**
          * Parses one `CV<channel> <level>` line. Shared with callers that read the output map

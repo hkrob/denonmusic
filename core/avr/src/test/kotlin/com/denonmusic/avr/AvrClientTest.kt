@@ -170,11 +170,22 @@ class AvrClientTest {
     }
 
     @Test
-    fun `sample rate divides the encoded value by ten`() = runBlocking {
+    fun `sample rate divides the 44,1kHz-family encoding by ten`() = runBlocking {
         server.onLines("SSINFAISFSV ?", "SSINFAISFSV 441")
         connection.connect()
 
         assertEquals(44.1, client.sampleRateKhz())
+    }
+
+    @Test
+    fun `sample rate takes the 48kHz-family encoding as-is, with no scaling`() = runBlocking {
+        // Confirmed live against a real AVR-X4500H streaming a 192 kHz FLAC: the receiver answers
+        // "SSINFAISFSV 192", not "1920" - dividing by ten unconditionally previously turned a real
+        // 192 kHz signal into a nonstandard, nonexistent 19.2 kHz reading.
+        server.onLines("SSINFAISFSV ?", "SSINFAISFSV 192")
+        connection.connect()
+
+        assertEquals(192.0, client.sampleRateKhz())
     }
 
     @Test
