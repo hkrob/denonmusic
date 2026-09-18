@@ -53,6 +53,10 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.5" to listOf(
+        "Fixed the update checker failing with \"Couldn't reach GitHub\" even when a new version was published - it was hitting GitHub's shared API rate limit, which a busy NAT/CGNAT connection can exhaust on its own.",
+        "Fixed the Browse A-Z jump index crushing the folder list down to nothing on any DLNA/Plex folder long enough to show it, making Browse unusable on those sources.",
+    ),
     "0.1.4" to listOf(
         "Security: the app no longer allows adb backup, which could previously lift the stored SMB and LAN control credentials in plaintext.",
         "Fixed a false \"something resampled it\" warning on genuine 192 kHz FLAC played through the bridge path, caused by misreading the receiver's reported sample rate for the 48 kHz-derived family.",
