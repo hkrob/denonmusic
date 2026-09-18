@@ -53,6 +53,15 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.4" to listOf(
+        "Security: the app no longer allows adb backup, which could previously lift the stored SMB and LAN control credentials in plaintext.",
+        "Fixed a false \"something resampled it\" warning on genuine 192 kHz FLAC played through the bridge path, caused by misreading the receiver's reported sample rate for the 48 kHz-derived family.",
+        "Fixed Now Playing and transport controls continuing to follow a finished bridge (SMB) track after tapping a row in the real HEOS queue.",
+        "Fixed the LAN control API's browse source getting stuck after a share rename or HEOS reindex, instead of recovering like the in-app browser already did.",
+        "Extended the HEOS-player-list recovery added in 0.1.3 to the LAN control API and bridge queue, which each kept their own stale player reference and could still wedge until the app was restarted.",
+        "Added an A-Z jump index to Browse for long folders, since the receiver has no server-side search on this source.",
+        "Added quick-pick buttons for the common AVR input mnemonics in Settings, instead of typing them by hand.",
+    ),
     "0.1.3" to listOf(
         "Fixed Now Playing showing a stale or wrong track after a bridge-mode (SMB) queue finished or was replaced from the LAN control API.",
         "Fixed \"Nothing playable found\" on Play All for a folder containing both tracks and subfolders.",
