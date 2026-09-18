@@ -5,9 +5,16 @@
     <!-- Lets the app hand a downloaded update APK to the system installer - see app/update/. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!--
+      allowBackup is off deliberately. Everything this app stores is either a LAN address or a
+      password: the SMB share credentials and the LAN control token live in a plain (unencrypted)
+      DataStore, so with backup enabled `adb backup` hands both to anyone with USB access to an
+      unlocked phone. There is nothing here worth restoring anyway - the settings are a handful of
+      fields, and every other table is a cache that refills itself from the network or the share.
+    -->
     <application
         android:name=".DenonMusicApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@android:drawable/ic_media_play"
         android:label="@string/app_name"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
