@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -217,8 +218,13 @@ private fun BrowseItem.jumpLetter(): Char {
  */
 @Composable
 private fun AlphabetJumpIndex(onLetterSelected: (Char) -> Unit) {
+    // fillMaxHeight only, not fillMaxSize: this is an unweighted sibling of the weighted LazyColumn
+    // in the enclosing Row, and Row measures unweighted children first with the *full* row width on
+    // offer - fillMaxSize() here claimed the entire row before the list got a chance at any of it,
+    // squeezing the folder list down to zero width (confirmed live: the list vanished entirely, only
+    // this index rendered). Wrapping content width instead leaves the rest of the row to the list.
     Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp),
+        modifier = Modifier.fillMaxHeight().padding(horizontal = 2.dp),
         verticalArrangement = Arrangement.SpaceEvenly,
     ) {
         (listOf('#') + ('A'..'Z')).forEach { letter ->
