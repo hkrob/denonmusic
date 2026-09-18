@@ -7,10 +7,12 @@ import android.provider.Settings
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
+import org.w3c.dom.Element
 import java.io.File
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import javax.xml.parsers.DocumentBuilderFactory
 
 /**
  * Where the app looks for updates. Each GitHub Release must be tagged with the version name
@@ -21,8 +23,20 @@ object UpdateConfig {
     const val OWNER = "hkrob"
     const val REPO = "denonmusic"
 
-    val latestReleaseApiUrl: String
-        get() = "https://api.github.com/repos/$OWNER/$REPO/releases/latest"
+    /**
+     * `api.github.com` enforces a 60-requests/hour limit per source IP for unauthenticated callers -
+     * shared across every device behind the same NAT gateway, which on a home or mobile connection can
+     * be many unrelated users. That quota being exhausted surfaced in this app as the update check
+     * failing with no useful reason ("Couldn't reach GitHub, or the latest release has no APK") even
+     * though the release existed. The public releases Atom feed is served from the plain `github.com`
+     * web tier, not `api.github.com`, so it isn't subject to that quota, and it carries both the tag
+     * name and the release notes in one request - see [UpdateManager.parseLatestFeedEntry].
+     */
+    val latestReleaseFeedUrl: String
+        get() = "https://github.com/$OWNER/$REPO/releases.atom"
+
+    /** The asset name `.github/workflows/release.yml` always publishes a release's APK under. */
+    fun apkUrl(tag: String) = "https://github.com/$OWNER/$REPO/releases/download/$tag/DenonMusic-$tag.apk"
 }
 
 data class ReleaseInfo(
@@ -34,39 +48,87 @@ data class ReleaseInfo(
 
 /**
  * Self-update over GitHub Releases: check the latest published version, download its APK, and hand
- * it to the system installer. No third-party libraries - HttpURLConnection + org.json, same shape as
- * this project's own [com.denonmusic.app.lancontrol.LanControlServer] and [com.denonmusic.smb.SmbOverlay].
+ * it to the system installer. No third-party libraries - HttpURLConnection + JDK XML parsing, same
+ * shape as this project's own [com.denonmusic.app.lancontrol.LanControlServer] and [com.denonmusic.smb.SmbOverlay].
  */
 object UpdateManager {
     private const val TIMEOUT_MS = 15_000
 
     /** Latest published release, or null if unreachable / no APK asset. Runs off the main thread. */
     suspend fun checkLatest(): ReleaseInfo? = withContext(Dispatchers.IO) {
-        val conn = (URL(UpdateConfig.latestReleaseApiUrl).openConnection() as HttpURLConnection).apply {
+        val conn = (URL(UpdateConfig.latestReleaseFeedUrl).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            setRequestProperty("Accept", "application/vnd.github+json")
             setRequestProperty("User-Agent", "DenonMusic") // GitHub rejects requests without a UA
             connectTimeout = TIMEOUT_MS
             readTimeout = TIMEOUT_MS
         }
-        try {
+        val entry = try {
             if (conn.responseCode != HttpURLConnection.HTTP_OK) return@withContext null
-            val obj = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-            val versionName = obj.getString("tag_name").trim().removePrefix("v").removePrefix("V")
-            val notes = obj.optString("body", "")
-            val assets = obj.getJSONArray("assets")
-            for (i in 0 until assets.length()) {
-                val a = assets.getJSONObject(i)
-                if (a.getString("name").endsWith(".apk", ignoreCase = true)) {
-                    return@withContext ReleaseInfo(
-                        versionName = versionName,
-                        apkUrl = a.getString("browser_download_url"),
-                        apkSizeBytes = a.optLong("size", 0L),
-                        notes = notes,
-                    )
-                }
-            }
-            null
+            parseLatestFeedEntry(conn.inputStream) ?: return@withContext null
+        } finally {
+            conn.disconnect()
+        }
+        val versionName = entry.tag.trim().removePrefix("v").removePrefix("V")
+        val apkUrl = UpdateConfig.apkUrl(entry.tag)
+        val apkSizeBytes = headContentLength(apkUrl) ?: return@withContext null
+        ReleaseInfo(
+            versionName = versionName,
+            apkUrl = apkUrl,
+            apkSizeBytes = apkSizeBytes,
+            notes = renderReleaseNotes(entry.notesHtml),
+        )
+    }
+
+    /** The most recent `<entry>` of the releases Atom feed: its tag name and raw HTML notes body. */
+    internal data class FeedEntry(val tag: String, val notesHtml: String)
+
+    /**
+     * The feed lists releases newest-first, one `<entry>` per release, with the tag name as its
+     * `<title>` and the release notes (this project's own changelog bullets, rendered to HTML by
+     * GitHub) as its `<content>`. `DocumentBuilderFactory` is plain JDK, not an Android class, so this
+     * parses under a plain JVM unit test with no Robolectric needed.
+     */
+    internal fun parseLatestFeedEntry(xml: InputStream): FeedEntry? {
+        val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(xml)
+        val entry = doc.getElementsByTagName("entry").item(0) as? Element ?: return null
+        val tag = (entry.getElementsByTagName("title").item(0)?.textContent ?: return null).trim()
+        val notesHtml = entry.getElementsByTagName("content").item(0)?.textContent ?: ""
+        return FeedEntry(tag, notesHtml)
+    }
+
+    /**
+     * Turns the feed's `<content>` HTML (always a `<ul>` of `<li>` bullets for this project's own
+     * changelog - see `release.yml`'s notes-extraction step) back into the same "- bullet" plain-text
+     * shape the old GitHub API's raw markdown `body` field used to hand `AboutScreen` directly.
+     * Falls back to stripping tags outright for any release note that isn't a plain bullet list.
+     */
+    internal fun renderReleaseNotes(html: String): String {
+        val items = Regex("<li>(.*?)</li>", RegexOption.DOT_MATCHES_ALL).findAll(html)
+            .map { unescapeHtml(it.groupValues[1].trim()) }
+            .toList()
+        if (items.isNotEmpty()) return items.joinToString("\n") { "- $it" }
+        return unescapeHtml(html.replace(Regex("<[^>]+>"), " ")).trim()
+    }
+
+    private fun unescapeHtml(text: String): String = text
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&") // must run last so it doesn't re-unescape the entities above
+
+    /** The APK's size via `HEAD`, or null if the asset doesn't actually exist at [apkUrl]. */
+    private fun headContentLength(apkUrl: String): Long? {
+        val conn = (URL(apkUrl).openConnection() as HttpURLConnection).apply {
+            requestMethod = "HEAD"
+            instanceFollowRedirects = true // GitHub redirects asset downloads to a CDN host
+            setRequestProperty("User-Agent", "DenonMusic")
+            connectTimeout = TIMEOUT_MS
+            readTimeout = TIMEOUT_MS
+        }
+        return try {
+            if (conn.responseCode != HttpURLConnection.HTTP_OK) null else conn.contentLengthLong.coerceAtLeast(0L)
         } finally {
             conn.disconnect()
         }
