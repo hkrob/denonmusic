@@ -2,6 +2,7 @@ package com.denonmusic.app.browse
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Folder
@@ -150,9 +152,25 @@ fun BrowseScreen(viewModel: BrowseViewModel = hiltViewModel()) {
                     }
                 }
             } else {
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(state.items) { item ->
-                        BrowseRow(item = item, onOpen = { viewModel.open(item) }, onAction = { viewModel.queue(item, it) })
+                val listState = rememberLazyListState()
+                val scope = rememberCoroutineScope()
+                Row(modifier = Modifier.weight(1f)) {
+                    LazyColumn(state = listState, modifier = Modifier.weight(1f)) {
+                        items(state.items) { item ->
+                            BrowseRow(item = item, onOpen = { viewModel.open(item) }, onAction = { viewModel.queue(item, it) })
+                        }
+                    }
+                    // sid 1024 (the only queueable source) answered browse/get_search_criteria with an
+                    // empty payload - confirmed against the real receiver, so it has no server-side
+                    // search to fall back on. This scrolls the already-fetched listing instead, which
+                    // solves the same "find an artist in a long list" problem without a round trip.
+                    if (state.items.size > JUMP_INDEX_MIN_ITEMS) {
+                        AlphabetJumpIndex(
+                            onLetterSelected = { letter ->
+                                val index = state.items.indexOfFirst { it.jumpLetter() == letter }
+                                if (index >= 0) scope.launch { listState.animateScrollToItem(index) }
+                            },
+                        )
                     }
                 }
             }
@@ -180,6 +198,36 @@ fun BrowseScreen(viewModel: BrowseViewModel = hiltViewModel()) {
                     }
                 }
             }
+        }
+    }
+}
+
+private const val JUMP_INDEX_MIN_ITEMS = 20
+
+/** '#' for anything that doesn't start with a letter, so a numbered album/track still gets a bucket. */
+private fun BrowseItem.jumpLetter(): Char {
+    val first = name.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar() ?: '#'
+    return if (first.isLetter()) first else '#'
+}
+
+/**
+ * A-Z plus '#', tap-to-scroll over the already-fetched listing - the fallback for sid 1024 (Local
+ * Music), the only queueable source, which answered `browse/get_search_criteria` with an empty
+ * payload on the real receiver, confirming it has no server-side search at all.
+ */
+@Composable
+private fun AlphabetJumpIndex(onLetterSelected: (Char) -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp),
+        verticalArrangement = Arrangement.SpaceEvenly,
+    ) {
+        (listOf('#') + ('A'..'Z')).forEach { letter ->
+            Text(
+                letter.toString(),
+                style = Winamp.smallStyle,
+                color = Winamp.Green,
+                modifier = Modifier.clickable { onLetterSelected(letter) },
+            )
         }
     }
 }
