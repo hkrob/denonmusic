@@ -83,10 +83,10 @@ receiving (`SSINFAISSIG`, `SSINFAISFSV`) and that appears in the Now Playing tec
 to the file's own header as read from SMB. A DSF file arriving as 176.4 kHz PCM means something in
 the chain transcoded it.
 
-The two are displayed side by side but not yet automatically compared - note that this receiver
-reports PCM for *all* network-sourced audio, because HEOS decodes internally before the amp section,
-so "DSD file, PCM at the amp" is expected for anything played through the HEOS queue and only means
-something has gone wrong for the bridge path.
+The two are automatically compared for the bridge (SMB direct-stream) path, where a mismatch is a
+real problem, and only there: this receiver reports PCM for *all* network-sourced audio, because HEOS
+decodes internally before the amp section, so "DSD file, PCM at the amp" is expected - not a fault -
+for anything played through the native HEOS queue.
 
 ## The probe
 

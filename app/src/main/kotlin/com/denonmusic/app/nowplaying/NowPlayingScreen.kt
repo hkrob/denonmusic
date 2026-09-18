@@ -37,6 +37,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.denonmusic.app.media.ChainIntegrity
+import com.denonmusic.app.media.ChainIntegrityResult
 import com.denonmusic.app.player.PlayerUiState
 import com.denonmusic.app.player.PlayerViewModel
 import com.denonmusic.app.player.icon
@@ -112,6 +114,18 @@ fun NowPlayingScreen(playerViewModel: PlayerViewModel, onBack: () -> Unit) {
                     style = Winamp.labelStyle,
                     modifier = Modifier.padding(top = 4.dp),
                 )
+                // Only meaningful for this (bridge) path: file-side info only exists here, and this
+                // receiver reports PCM for all network-sourced audio regardless of the source file, so
+                // the same comparison against a native HEOS/DLNA queue item would flag every DSD track
+                // as a false "something transcoded it" - see ChainIntegrity's own doc.
+                val integrity = ChainIntegrity.evaluate(
+                    state.bridgeQueue.currentFormatInfo,
+                    state.technicalInfo?.signalType,
+                    state.technicalInfo?.sampleRateKhz,
+                )
+                if (integrity is ChainIntegrityResult.Mismatch) {
+                    Text(integrity.description, style = Winamp.smallStyle, color = Winamp.Amber, modifier = Modifier.padding(top = 4.dp))
+                }
             } else {
                 val np = state.nowPlaying
                 Box(modifier = Modifier.size(220.dp).bevel().padding(bottom = 16.dp)) {
