@@ -55,6 +55,18 @@ enum class BitPerfectPolicy {
         AutoDirect -> SoundMode.Direct
         AutoPureDirect -> SoundMode.PureDirect
     }
+
+    companion object {
+        /**
+         * The one place "what does a missing or garbled stored policy mean" is decided, so the three
+         * call sites that used to answer it differently - default to [Off], silently apply nothing, or
+         * echo the raw unvalidated string - can't drift again. [Off] is the correct default: it is the
+         * only policy that changes nothing on the receiver, so a corrupt or pre-this-feature settings
+         * value can never unexpectedly force a sound-mode switch.
+         */
+        fun fromStoredName(name: String?): BitPerfectPolicy =
+            name?.let { stored -> entries.firstOrNull { it.name == stored } } ?: Off
+    }
 }
 
 enum class SignalType {

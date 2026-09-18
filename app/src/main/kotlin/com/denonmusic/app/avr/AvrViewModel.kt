@@ -35,6 +35,7 @@ data class AvrUiState(
 class AvrViewModel @Inject constructor(
     private val session: AvrSession,
     private val settings: SettingsRepository,
+    private val bitPerfectPolicyController: BitPerfectPolicyController,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AvrUiState())
@@ -46,8 +47,7 @@ class AvrViewModel @Inject constructor(
         viewModelScope.launch {
             val saved = settings.settings.first()
             _uiState.value = _uiState.value.copy(
-                bitPerfectPolicy = saved.bitPerfectPolicy?.let { runCatching { BitPerfectPolicy.valueOf(it) }.getOrNull() }
-                    ?: BitPerfectPolicy.Off,
+                bitPerfectPolicy = bitPerfectPolicyController.storedPolicy(),
                 inputMnemonic = saved.avrInputMnemonic,
             )
             saved.avrHost?.let { session.start(it) }
@@ -148,9 +148,8 @@ class AvrViewModel @Inject constructor(
     fun setBitPerfectPolicy(policy: BitPerfectPolicy) {
         val client = session.avrClient
         viewModelScope.launch {
-            settings.setBitPerfectPolicy(policy.name)
+            bitPerfectPolicyController.persistAndApply(client, policy)
             _uiState.value = _uiState.value.copy(bitPerfectPolicy = policy)
-            client?.let { runCatching { it.applyBitPerfectPolicy(policy) } }
         }
     }
 }

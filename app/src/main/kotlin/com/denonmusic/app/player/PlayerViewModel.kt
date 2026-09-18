@@ -3,13 +3,13 @@ package com.denonmusic.app.player
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denonmusic.app.avr.AvrSession
+import com.denonmusic.app.avr.BitPerfectPolicyController
 import com.denonmusic.app.bridge.BridgeQueueController
 import com.denonmusic.app.bridge.BridgeQueueState
 import com.denonmusic.app.heos.HeosConnectionState
 import com.denonmusic.app.heos.HeosPlaybackStarter
 import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.app.lancontrol.LanControlManager
-import com.denonmusic.avr.BitPerfectPolicy
 import com.denonmusic.avr.SignalType
 import com.denonmusic.data.settings.SettingsRepository
 import com.denonmusic.heos.NowPlaying
@@ -121,6 +121,7 @@ class PlayerViewModel @Inject constructor(
     private val bridgeQueueController: BridgeQueueController,
     private val lanControlManager: LanControlManager,
     private val playbackStarter: HeosPlaybackStarter,
+    private val bitPerfectPolicyController: BitPerfectPolicyController,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
@@ -253,10 +254,7 @@ class PlayerViewModel @Inject constructor(
      * level (current state) into that edge (state that just changed).
      */
     private suspend fun applyBitPerfectPolicyOnPlaybackStart() {
-        val client = avrSession.avrClient ?: return
-        val policyName = runCatching { settings.settings.first() }.getOrNull()?.bitPerfectPolicy ?: return
-        val policy = runCatching { BitPerfectPolicy.valueOf(policyName) }.getOrNull() ?: return
-        runCatching { client.applyBitPerfectPolicy(policy) }
+        bitPerfectPolicyController.applyStored(avrSession.avrClient)
     }
 
     private suspend fun refreshQueue(pid: String) {

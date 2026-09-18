@@ -1,6 +1,7 @@
 package com.denonmusic.app.lancontrol
 
 import com.denonmusic.app.avr.AvrSession
+import com.denonmusic.app.avr.BitPerfectPolicyController
 import com.denonmusic.app.bridge.BridgeQueueController
 import com.denonmusic.app.bridge.BridgeQueueItem
 import com.denonmusic.app.browse.SourceRepository
@@ -62,6 +63,7 @@ class LanControlManager @Inject constructor(
     private val mediaInfoRepository: MediaInfoRepository,
     private val bridgeQueueController: BridgeQueueController,
     private val playbackStarter: HeosPlaybackStarter,
+    private val bitPerfectPolicyController: BitPerfectPolicyController,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var started = false
@@ -266,9 +268,7 @@ class LanControlManager @Inject constructor(
             val known = BitPerfectPolicy.entries.joinToString { it.name }
             return LanControlResponse(400, """{"error":"unknown policy, expected one of $known"}""")
         }
-        settings.setBitPerfectPolicy(policy.name)
-        val client = avrSession.avrClient
-        return ok { client?.let { it.applyBitPerfectPolicy(policy) } }
+        return ok { bitPerfectPolicyController.persistAndApply(avrSession.avrClient, policy) }
     }
 
     /**
