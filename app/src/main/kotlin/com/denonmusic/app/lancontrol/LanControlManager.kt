@@ -139,6 +139,9 @@ class LanControlManager @Inject constructor(
             "POST" to "/smb/play" -> smbPlayResponse(request)
             "POST" to "/smb/queue" -> smbQueueResponse(request)
             "GET" to "/progress" -> progressResponse()
+            // Dispatched here rather than inside heosHandle on purpose: that gate requires a resolved
+            // pid first, but a wedged pid resolution is exactly the failure this command recovers from.
+            "POST" to "/reboot" -> rebootResponse()
             else -> heosHandle(request)
         }
     }
@@ -468,6 +471,17 @@ class LanControlManager @Inject constructor(
 
     private suspend fun ok(action: suspend () -> Unit): LanControlResponse {
         action()
+        return LanControlResponse.ok("""{"ok":true}""")
+    }
+
+    /**
+     * Reboots the HEOS network module (see [HeosClient.reboot]'s own doc). Always reports success
+     * once the command was sent: confirmed live that the connection drops before a response frame
+     * ever arrives, which is the expected shape of this command working, not a failure to surface.
+     */
+    private suspend fun rebootResponse(): LanControlResponse {
+        val client = heosSession.heosClient ?: return LanControlResponse(503, """{"error":"HEOS not connected"}""")
+        runCatching { client.reboot() }
         return LanControlResponse.ok("""{"ok":true}""")
     }
 

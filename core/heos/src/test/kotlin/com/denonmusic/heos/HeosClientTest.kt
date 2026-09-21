@@ -56,6 +56,17 @@ class HeosClientTest {
     }
 
     @Test
+    fun `sends a reboot command and matches the response`() = runBlocking {
+        server.onSuccess("system/reboot")
+        connection.connect()
+
+        val frame = client.reboot()
+
+        assertTrue(frame.isSuccess)
+        assertTrue(server.received.single().startsWith("heos://system/reboot?"))
+    }
+
+    @Test
     fun `reads music sources and identifies the local media source`() = runBlocking {
         server.onSuccess(
             "browse/get_music_sources",

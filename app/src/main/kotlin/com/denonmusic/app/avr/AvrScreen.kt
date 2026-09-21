@@ -15,18 +15,24 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -46,6 +52,17 @@ private val ALL_CHANNELS = listOf("FL", "C", "FR", "SL", "SR", "SBL", "SBR", "SW
 @Composable
 fun AvrScreen(viewModel: AvrViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
+    var showRebootConfirm by remember { mutableStateOf(false) }
+
+    if (showRebootConfirm) {
+        RebootConfirmDialog(
+            onConfirm = {
+                showRebootConfirm = false
+                viewModel.rebootReceiver()
+            },
+            onDismiss = { showRebootConfirm = false },
+        )
+    }
 
     Scaffold(
         containerColor = Winamp.Background,
@@ -168,8 +185,37 @@ fun AvrScreen(viewModel: AvrViewModel = hiltViewModel()) {
                 SectionLabel("SIGNAL", modifier = Modifier.padding(top = 16.dp))
                 Text(summary, style = Winamp.labelStyle, color = Winamp.Green)
             }
+
+            SectionLabel("MAINTENANCE", modifier = Modifier.padding(top = 16.dp))
+            Text(
+                "Reboots the receiver's network module - the fix when browse or now-playing stops " +
+                    "updating and won't recover on its own. Interrupts whatever's playing.",
+                style = Winamp.smallStyle,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            OutlinedButton(
+                onClick = { showRebootConfirm = true },
+                enabled = !state.isRebooting,
+            ) {
+                Text(if (state.isRebooting) "REBOOTING…" else "REBOOT RECEIVER", style = Winamp.smallStyle)
+            }
         }
     }
+}
+
+@Composable
+private fun RebootConfirmDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Reboot receiver?", style = Winamp.labelStyle) },
+        text = { Text("This stops whatever's playing and takes the receiver offline for about a minute.") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text("REBOOT", color = Winamp.Amber) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("CANCEL") }
+        },
+    )
 }
 
 @Composable

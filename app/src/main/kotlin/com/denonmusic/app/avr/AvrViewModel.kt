@@ -2,6 +2,7 @@ package com.denonmusic.app.avr
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.avr.AvrClient
 import com.denonmusic.avr.BitPerfectPolicy
 import com.denonmusic.avr.OutputChannel
@@ -29,11 +30,13 @@ data class AvrUiState(
     val outputChannels: List<OutputChannel> = emptyList(),
     val bitPerfectPolicy: BitPerfectPolicy = BitPerfectPolicy.Off,
     val inputMnemonic: String = "NET",
+    val isRebooting: Boolean = false,
 )
 
 @HiltViewModel
 class AvrViewModel @Inject constructor(
     private val session: AvrSession,
+    private val heosSession: HeosSession,
     private val settings: SettingsRepository,
     private val bitPerfectPolicyController: BitPerfectPolicyController,
 ) : ViewModel() {
@@ -150,6 +153,22 @@ class AvrViewModel @Inject constructor(
         viewModelScope.launch {
             bitPerfectPolicyController.persistAndApply(client, policy)
             _uiState.value = _uiState.value.copy(bitPerfectPolicy = policy)
+        }
+    }
+
+    /**
+     * Reboots the HEOS network module via [HeosClient.reboot] - the documented fix for a telnet/HEOS
+     * connection that's wedged until the receiver is power-cycled by hand (see that command's own
+     * doc). Goes over the HEOS session, not [AvrSession]'s telnet connection: `system/reboot` is a
+     * HEOS CLI command, and telnet has no equivalent. Confirmed live: both connections drop within
+     * the request and the receiver is back and browsable roughly 90s later.
+     */
+    fun rebootReceiver() {
+        val client = heosSession.heosClient ?: return
+        _uiState.value = _uiState.value.copy(isRebooting = true)
+        viewModelScope.launch {
+            runCatching { client.reboot() }
+            _uiState.value = _uiState.value.copy(isRebooting = false)
         }
     }
 }

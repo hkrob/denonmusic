@@ -18,6 +18,15 @@ class HeosClient(private val connection: HeosConnection) {
 
     suspend fun heartBeat() = connection.command("system", "heart_beat")
 
+    /**
+     * Reboots the HEOS device's network module - documented in the HEOS CLI Protocol Specification
+     * (4.1.6, added in v1.2) and confirmed live against a real AVR-X4500H: the CLI and event socket
+     * both drop within the request, and the device is back and browsable ~90s later. The one fix for
+     * the class of bug where a stale telnet/HEOS connection wedges until the receiver is power-cycled
+     * by hand - see docs/local-setup.md's Home Assistant contention note.
+     */
+    suspend fun reboot() = connection.command("system", "reboot")
+
     // -- players -----------------------------------------------------------
 
     suspend fun getPlayers(): List<HeosPlayer> =

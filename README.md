@@ -156,6 +156,7 @@ curl -H "X-Lan-Control-Token: $TOKEN" -X POST 'http://<phone-ip>:8901/volume?lev
 | `GET /smb`, `POST /smb/play`, `/smb/queue` | The SMB fallback browser - works even with the receiver off |
 | `POST /power`, `/soundmode`, `/input`, `/bitperfect` | Direct AVR control |
 | `GET /progress` | Live progress of whatever folder-wide scan or queue walk is running |
+| `POST /reboot` | Reboots the HEOS network module - the fix when browse/now-playing/queue are wedged and won't recover on their own; interrupts playback |
 
 There is no rate limiting on failed auth, and the server refuses to start at all without a password
 set. It is meant for a trusted home LAN, not the open internet.
