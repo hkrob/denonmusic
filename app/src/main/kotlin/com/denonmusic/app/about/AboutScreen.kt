@@ -53,6 +53,11 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.6" to listOf(
+        "Added a receiver reboot action (AVR panel and the LAN control API's new POST /reboot) - " +
+            "recovers the receiver's HEOS network module without a manual power-cycle when browse, " +
+            "now-playing or the queue get wedged and won't come back on their own.",
+    ),
     "0.1.5" to listOf(
         "Fixed the update checker failing with \"Couldn't reach GitHub\" even when a new version was published - it was hitting GitHub's shared API rate limit, which a busy NAT/CGNAT connection can exhaust on its own.",
         "Fixed the Browse A-Z jump index crushing the folder list down to nothing on any DLNA/Plex folder long enough to show it, making Browse unusable on those sources.",
