@@ -596,3 +596,28 @@ Two more real-hardware-driven fixes:
   needs one. Verified on real hardware: both a native Plex-DLNA track and a bridge-mode Atmos `.m4a`
   (folder art, since `ArtworkExtractor` has no MP4/M4A embedded-picture support) showed real cover
   art on the Now Playing screen.
+
+## Search probed against real hardware (2026-09-21): not usable, jump-index stays the answer
+
+The improvement plan's Track C2 called for probing `browse/get_search_criteria` before building a
+search UI, since HEOS search support is source-dependent. Ran against the real AVR-X4500H
+(10.1.10.50):
+
+- `browse/get_search_criteria?sid=1024` (the aggregate "Local Music" source) returns an **empty**
+  criteria list - no search at all at that level.
+- The nested Plex DLNA server (`browse/browse?sid=1024` returns it as its own source, `sid=-66917606`
+  in this session) *does* advertise criteria: Artist (`scid=1`), Album (`scid=2`), Track (`scid=3`,
+  playable).
+- But every actual `browse/search?sid=-66917606&search=...&scid=...` call against it - tried all
+  three criteria, with and without a `range` param - fails identically:
+  `eid=12, text=System error, syserrno=-10`. `browse/search?sid=1024&...` (the aggregate) fails
+  differently: `eid=7, Command not executed`, i.e. rejected outright rather than attempted.
+
+So this receiver's Plex-DLNA integration lies about search support at the criteria-discovery layer
+but the actual search call is broken - not a client-side bug, nothing to retry or reformat around,
+and no other source on this system is queueable enough to be worth testing search against. Building
+a search UI on top of this would ship a control that always errors. Per the plan's own fallback
+branch, the already-shipped client-side A-Z jump index (`AlphabetJumpIndex` in `BrowseScreen.kt`) is
+the correct and sufficient answer here - no protocol-level search code was added. If a future
+receiver/firmware/Plex version fixes `browse/search`, re-probe with the same three commands before
+reconsidering.
