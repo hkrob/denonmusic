@@ -48,6 +48,24 @@ import com.denonmusic.avr.SoundMode
 /** Layout order for the OUTPUT map grid, roughly matching a real speaker plan front-to-back. */
 private val ALL_CHANNELS = listOf("FL", "C", "FR", "SL", "SR", "SBL", "SBR", "SW", "SW2")
 
+/** Denon `SI` mnemonics common across the AVR-X line, per Denon's published IP control protocol. */
+private val COMMON_AVR_INPUTS = listOf(
+    "NET" to "Network / HEOS",
+    "CD" to "CD",
+    "TUNER" to "Tuner",
+    "DVD" to "DVD",
+    "BD" to "Blu-ray",
+    "TV" to "TV",
+    "SAT/CBL" to "Satellite / Cable",
+    "MPLAY" to "Media Player",
+    "GAME" to "Game",
+    "AUX1" to "Aux 1",
+    "AUX2" to "Aux 2",
+    "PHONO" to "Phono",
+    "BT" to "Bluetooth",
+    "USB/IPOD" to "USB / iPod",
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AvrScreen(viewModel: AvrViewModel = hiltViewModel()) {
@@ -94,12 +112,22 @@ fun AvrScreen(viewModel: AvrViewModel = hiltViewModel()) {
                 .verticalScroll(rememberScrollState()),
         ) {
             SectionLabel("INPUT")
-            Text(
-                state.inputSource?.let { "SOURCE: $it" } ?: "UNKNOWN",
-                style = Winamp.labelStyle,
-                color = Winamp.Green,
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.padding(bottom = 16.dp),
-            )
+            ) {
+                COMMON_AVR_INPUTS.forEach { (mnemonic, label) ->
+                    FilterChip(
+                        selected = state.inputSource == mnemonic,
+                        onClick = { viewModel.selectInput(mnemonic) },
+                        label = { Text(label, style = Winamp.smallStyle) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Winamp.Green,
+                            selectedLabelColor = Winamp.Background,
+                        ),
+                    )
+                }
+            }
 
             SectionLabel("SOUND MODE")
             FlowRow(
