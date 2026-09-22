@@ -53,6 +53,11 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.7" to listOf(
+        "Moved input select from Settings to the AVR tab, and made it actually switch the " +
+            "receiver's input live - it previously only saved a setting despite looking like a " +
+            "working control.",
+    ),
     "0.1.6" to listOf(
         "Added a receiver reboot action (AVR panel and the LAN control API's new POST /reboot) - " +
             "recovers the receiver's HEOS network module without a manual power-cycle when browse, " +
