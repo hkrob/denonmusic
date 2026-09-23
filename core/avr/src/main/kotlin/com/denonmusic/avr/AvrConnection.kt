@@ -59,8 +59,17 @@ class AvrConnection(
 
     val isConnected: Boolean get() = socket?.isConnected == true && socket?.isClosed == false
 
+    /**
+     * [collected] is appended to from the reader coroutine and read from the waiting caller's own
+     * coroutine - different threads on [Dispatchers.IO], so a bare `mutableListOf` here could tear a
+     * read or throw `ConcurrentModificationException` mid-iteration.
+     */
     private class Pending(val matches: (String) -> Boolean) {
-        val lines = mutableListOf<String>()
+        private val collected = mutableListOf<String>()
+
+        fun add(line: String) = synchronized(collected) { collected += line }
+
+        fun snapshot(): List<String> = synchronized(collected) { collected.toList() }
     }
 
     suspend fun connect() = withContext(dispatcher) {
@@ -93,7 +102,7 @@ class AvrConnection(
 
     private suspend fun dispatchToWaiters(line: String) {
         pendingLock.withLock {
-            pending.filter { it.matches(line) }.forEach { it.lines += line }
+            pending.filter { it.matches(line) }.forEach { it.add(line) }
         }
     }
 
@@ -114,7 +123,18 @@ class AvrConnection(
      * Used for simple one-line answers: `PW?` -> `PWON`, `SI?` -> `SINET`, `MS?` -> `MSSTEREO`.
      */
     suspend fun query(command: String, responsePrefix: String, timeoutMillis: Long = 3_000): String =
-        queryMatching(command, { it.startsWith(responsePrefix) }, timeoutMillis) { it.lines.isNotEmpty() }.first()
+        queryFirstMatching(command, timeoutMillis) { it.startsWith(responsePrefix) }
+
+    /**
+     * [query] with an arbitrary predicate instead of a bare prefix, for the cases where a prefix
+     * alone would also catch one of the receiver's own free-running telemetry lines - `MV?`'s answer
+     * shares its `MV` prefix with the `MVMAX` line this unit emits unprompted, for instance.
+     */
+    suspend fun queryFirstMatching(
+        command: String,
+        timeoutMillis: Long = 3_000,
+        matches: (String) -> Boolean,
+    ): String = queryMatching(command, matches, timeoutMillis) { it.snapshot().isNotEmpty() }.first()
 
     /**
      * Sends [command] and collects every line starting with any of [responsePrefixes], for a fixed
@@ -138,7 +158,7 @@ class AvrConnection(
         { line -> responsePrefixes.any { line.startsWith(it) } },
         overallTimeoutMillis,
     ) { pendingEntry ->
-        if (pendingEntry.lines.isEmpty()) {
+        if (pendingEntry.snapshot().isEmpty()) {
             false
         } else {
             kotlinx.coroutines.delay(burstWindowMillis)
@@ -161,7 +181,7 @@ class AvrConnection(
         terminator: String,
         overallTimeoutMillis: Long = 3_000,
     ): List<String> = queryMatching(command, { it.startsWith(responsePrefix) }, overallTimeoutMillis) { pendingEntry ->
-        pendingEntry.lines.any { it.startsWith(terminator) }
+        pendingEntry.snapshot().any { it.startsWith(terminator) }
     }
 
     private suspend fun queryMatching(
@@ -184,7 +204,7 @@ class AvrConnection(
                 while (!isDone(entry)) {
                     kotlinx.coroutines.delay(POLL_INTERVAL_MILLIS)
                 }
-                entry.lines.toList()
+                entry.snapshot()
             }
         } finally {
             pendingLock.withLock { pending.remove(entry) }

@@ -33,7 +33,9 @@ object BridgeQueueLogic {
     fun replaceQueue(current: BridgeQueueState, items: List<BridgeQueueItem>, startIndex: Int): BridgeQueueState =
         BridgeQueueState(
             items = items,
-            currentIndex = startIndex.coerceIn(items.indices),
+            // Not `coerceIn(items.indices)`: on an empty list that range is empty, and coerceIn
+            // throws rather than clamping. An empty replace is "nothing playing", i.e. index -1.
+            currentIndex = if (items.isEmpty()) -1 else startIndex.coerceIn(0, items.lastIndex),
             repeat = current.repeat,
             shuffle = current.shuffle,
         )

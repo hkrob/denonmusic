@@ -34,6 +34,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.net.Inet4Address
 import java.net.NetworkInterface
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -71,14 +72,19 @@ class LanControlManager @Inject constructor(
 
     // Progress for whatever folder-wide play/queue walk (SMB or HEOS) is currently running, if any -
     // polled by the web UI via GET /progress so a big folder's tens-of-seconds walk shows live
-    // feedback instead of looking stuck. @Volatile: written from whichever client thread is running
-    // the walk, read from whichever client thread is polling - see LanControlServer's thread-per-
-    // connection model.
-    @Volatile private var progressActive = false
-
-    @Volatile private var progressCount = 0
-
+    // feedback instead of looking stuck. Written from whichever client thread is running the walk and
+    // read from whichever client thread is polling - see LanControlServer's thread-per-connection
+    // model - so @Volatile for the message and atomics for the counters.
     @Volatile private var progressMessage = ""
+
+    /**
+     * Count of walks currently running, not a boolean: two clients (or a client and the app) can
+     * start one at once, and with a flag the first to finish reported the second one as finished too,
+     * so the web UI's progress line vanished while its own walk was still going.
+     */
+    private val progressDepth = AtomicInteger(0)
+
+    private val progressCount = AtomicInteger(0)
 
     private val _status = MutableStateFlow<LanControlStatus>(LanControlStatus.Off)
     val status: StateFlow<LanControlStatus> = _status.asStateFlow()
@@ -440,22 +446,25 @@ class LanControlManager @Inject constructor(
     private fun String.toBridgeQueueItem() = BridgeQueueItem(path = this, displayName = substringAfterLast('/'))
 
     private fun beginProgress(message: String) {
-        progressCount = 0
+        if (progressDepth.getAndIncrement() == 0) progressCount.set(0)
         progressMessage = message
-        progressActive = true
     }
 
     private fun bumpProgress(message: String) {
-        progressCount++
+        progressCount.incrementAndGet()
         progressMessage = message
     }
 
     private fun endProgress() {
-        progressActive = false
+        progressDepth.decrementAndGet()
     }
 
-    private fun progressResponse(): LanControlResponse =
-        LanControlResponse.ok("""{"active":$progressActive,"count":$progressCount,"message":${jsonString(progressMessage)}}""")
+    private fun progressResponse(): LanControlResponse {
+        val active = progressDepth.get() > 0
+        return LanControlResponse.ok(
+            """{"active":$active,"count":${progressCount.get()},"message":${jsonString(progressMessage)}}""",
+        )
+    }
 
     private suspend fun withIntParam(request: LanControlRequest, name: String, action: suspend (Int) -> Unit): LanControlResponse {
         val value = request.query[name]?.toIntOrNull()

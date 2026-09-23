@@ -9,7 +9,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.material3.Surface
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.denonmusic.app.nav.MainScreen
 import com.denonmusic.app.settings.SettingsViewModel
 import com.denonmusic.app.ui.Winamp
@@ -55,16 +57,31 @@ class MainActivity : ComponentActivity() {
         return super.dispatchTouchEvent(ev)
     }
 
+    /** Coming back to the app is activity: without this the idle clock has been running the whole
+     * time the app was away, so a resume with auto-dim on dimmed the screen instantly. */
+    override fun onResume() {
+        super.onResume()
+        lastInteractionAtMillis = SystemClock.elapsedRealtime()
+        restoreBrightness()
+    }
+
     /**
-     * Runs for the app's lifetime, restarting its inner idle-check loop (via `collectLatest`)
-     * whenever settings change - cheap, since the loop itself is just a 1s poll against a plain
-     * field, and simpler than diffing which particular setting changed.
+     * Restarts its inner idle-check loop (via `collectLatest`) whenever settings change - cheap,
+     * since the loop itself is just a 1s poll against a plain field, and simpler than diffing which
+     * particular setting changed.
+     *
+     * Scoped to STARTED, not the activity's whole lifetime: a plain `lifecycleScope.launch` kept the
+     * 1s poll ticking for as long as the process lived, so enabling auto-dim signed the user up for a
+     * once-a-second wakeup while the app sat in the background doing nothing. There is nothing to dim
+     * when the activity isn't on screen anyway.
      */
     private fun observeScreenSettings() {
         lifecycleScope.launch {
-            settingsViewModel.settingsState.collectLatest { settings ->
-                applyKeepScreenOn(settings.keepScreenOn)
-                runAutoDimLoop(settings)
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                settingsViewModel.settingsState.collectLatest { settings ->
+                    applyKeepScreenOn(settings.keepScreenOn)
+                    runAutoDimLoop(settings)
+                }
             }
         }
     }

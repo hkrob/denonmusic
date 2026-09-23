@@ -162,6 +162,30 @@ class BrowseCacheDaoTest {
     }
 
     @Test
+    fun `deletePagesFrom drops the tail a shrunken container left behind`() = runBlocking {
+        dao.upsert(page(rangeStart = 0))
+        dao.upsert(page(rangeStart = 50))
+        dao.upsert(page(rangeStart = 100))
+        dao.upsert(page(cid = "other", rangeStart = 100))
+
+        // The container re-listed to 50 items, so only the page at 0 is still real.
+        dao.deletePagesFrom(sid = "1024", cid = "a", fromRangeStart = 50)
+
+        assertEquals(listOf(0), dao.getAllPages("1024", "a").map { it.rangeStart })
+        assertEquals(1, dao.getAllPages("1024", "other").size)
+    }
+
+    @Test
+    fun `deletePagesFrom zero clears a container that emptied out entirely`() = runBlocking {
+        dao.upsert(page(rangeStart = 0))
+        dao.upsert(page(rangeStart = 50))
+
+        dao.deletePagesFrom(sid = "1024", cid = "a", fromRangeStart = 0)
+
+        assertEquals(emptyList(), dao.getAllPages("1024", "a"))
+    }
+
+    @Test
     fun `deleteOlderThan removes only rows cached before the cutoff`() = runBlocking {
         dao.upsert(page(rangeStart = 0, cachedAt = 1_000L))
         dao.upsert(page(rangeStart = 100, cachedAt = 9_000L))

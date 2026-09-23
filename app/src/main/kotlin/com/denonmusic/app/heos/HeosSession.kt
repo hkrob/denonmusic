@@ -91,8 +91,8 @@ class HeosSession @Inject constructor() {
     fun stop() {
         sessionJob?.cancel()
         sessionJob = null
-        eventConnection?.close()
-        commandConnection?.close()
+        eventConnection?.shutdown()
+        commandConnection?.shutdown()
         client = null
         _lastKnownPid = null
         _state.value = HeosConnectionState.Disconnected
@@ -102,9 +102,14 @@ class HeosSession @Inject constructor() {
         var attempt = 0
         while (kotlinx.coroutines.currentCoroutineContext().isActive) {
             _state.value = HeosConnectionState.Connecting
+            // Held as locals as well as fields so the cleanup below can reach a connection that was
+            // opened but never published - the second connect(), or the change-event registration,
+            // failing used to abandon the first socket (and its scope) with nothing left pointing at it.
+            var events: HeosConnection? = null
+            var commands: HeosConnection? = null
             try {
-                val events = HeosConnection(host)
-                val commands = HeosConnection(host)
+                events = HeosConnection(host)
+                commands = HeosConnection(host)
                 events.connect()
                 commands.connect()
                 events.command("system", "register_for_change_events", listOf("enable" to "on"))
@@ -116,12 +121,18 @@ class HeosSession @Inject constructor() {
                 _state.value = HeosConnectionState.Connected(host)
 
                 heartbeatLoop(commands, events)
-                // heartbeatLoop only returns when a connection has failed.
+                // heartbeatLoop only returns when a connection has failed. Saying so explicitly
+                // matters: without it the state stayed Connected(host) for the whole backoff delay
+                // below, so `state` claimed a live session while `heosClient` was already null, and
+                // start(host) - which early-returns on Connected(host) - refused to reconnect.
+                _state.value = HeosConnectionState.Failed(host, "connection lost")
             } catch (t: Throwable) {
                 _state.value = HeosConnectionState.Failed(host, t.message ?: t.toString())
             } finally {
-                runCatching { eventConnection?.close() }
-                runCatching { commandConnection?.close() }
+                // shutdown, not close: each HeosConnection owns a CoroutineScope that close() leaves
+                // running, so a reconnect loop on a flaky network leaked two of them per attempt.
+                runCatching { events?.shutdown() }
+                runCatching { commands?.shutdown() }
                 eventConnection = null
                 commandConnection = null
                 client = null

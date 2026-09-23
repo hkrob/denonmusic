@@ -12,7 +12,6 @@ import kotlinx.coroutines.withContext
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -29,8 +28,27 @@ class SmbBridgeService @Inject constructor(
     private val mediaInfoRepository: MediaInfoRepository,
     private val settings: SettingsRepository,
 ) {
-    private val resources = ConcurrentHashMap<String, com.denonmusic.smb.BridgeResource>()
-    private val server: SmbBridgeServer by lazy { SmbBridgeServer { token -> resources[token] } }
+    /**
+     * Live bridge tokens, newest last, capped at [MAX_LIVE_TOKENS].
+     *
+     * A bound is the point: every [urlFor] minted a token and nothing ever retired one, so playing a
+     * long queue through the bridge grew this map for the life of the process, each entry holding a
+     * resolved resource (and keeping its URL fetchable) forever. The cap is generous rather than 1
+     * because the receiver re-fetches the current track with `Range` requests and may still be
+     * finishing the previous track's buffer when the next one is minted.
+     */
+    private val resources = object : LinkedHashMap<String, com.denonmusic.smb.BridgeResource>(16, 0.75f, false) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, com.denonmusic.smb.BridgeResource>) =
+            size > MAX_LIVE_TOKENS
+    }
+
+    private fun resource(token: String): com.denonmusic.smb.BridgeResource? = synchronized(resources) { resources[token] }
+
+    private fun register(token: String, resource: com.denonmusic.smb.BridgeResource) {
+        synchronized(resources) { resources[token] = resource }
+    }
+
+    private val server: SmbBridgeServer by lazy { SmbBridgeServer(::resource) }
 
     /** Null when SMB credentials aren't configured yet, or the path doesn't resolve to a real file. */
     suspend fun urlFor(path: String): String? {
@@ -43,7 +61,7 @@ class SmbBridgeService @Inject constructor(
 
         if (!server.isRunning) server.start()
         val token = UUID.randomUUID().toString()
-        resources[token] = resource
+        register(token, resource)
 
         val ip = localLanAddress() ?: return null
         return "http://$ip:${server.port}/$token"
@@ -77,4 +95,9 @@ class SmbBridgeService @Inject constructor(
             .filterIsInstance<Inet4Address>()
             .firstOrNull()
             ?.hostAddress
+
+    private companion object {
+        /** Enough for the track being fetched plus a handful still draining behind it. */
+        const val MAX_LIVE_TOKENS = 8
+    }
 }

@@ -89,7 +89,7 @@ object UpdateManager {
      * parses under a plain JVM unit test with no Robolectric needed.
      */
     internal fun parseLatestFeedEntry(xml: InputStream): FeedEntry? {
-        val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(xml)
+        val doc = secureDocumentBuilderFactory().newDocumentBuilder().parse(xml)
         val entry = doc.getElementsByTagName("entry").item(0) as? Element ?: return null
         val tag = (entry.getElementsByTagName("title").item(0)?.textContent ?: return null).trim()
         val notesHtml = entry.getElementsByTagName("content").item(0)?.textContent ?: ""
@@ -109,6 +109,21 @@ object UpdateManager {
         if (items.isNotEmpty()) return items.joinToString("\n") { "- $it" }
         return unescapeHtml(html.replace(Regex("<[^>]+>"), " ")).trim()
     }
+
+    /**
+     * Doctype declarations and external entities off. The feed is GitHub's own over HTTPS, so this
+     * isn't guarding a realistic attack today - but a parser that resolves whatever a remote
+     * document tells it to is worth not shipping regardless of who is currently on the other end.
+     */
+    private fun secureDocumentBuilderFactory(): DocumentBuilderFactory =
+        DocumentBuilderFactory.newInstance().apply {
+            runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
+            runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
+            runCatching { setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
+            runCatching { setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false) }
+            isXIncludeAware = false
+            isExpandEntityReferences = false
+        }
 
     private fun unescapeHtml(text: String): String = text
         .replace("&lt;", "<")

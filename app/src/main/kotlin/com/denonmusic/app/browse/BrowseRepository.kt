@@ -56,11 +56,19 @@ class BrowseRepository @Inject constructor(
     suspend fun updateScroll(position: Int, index: Int, offset: Int) =
         stackDao.updateScroll(position, index, offset)
 
-    /** Cache paints first when present, then a fresh network listing follows once it lands. */
+    /**
+     * Cache paints first when present, then a fresh network listing follows once it lands.
+     *
+     * The cache paint honours [BrowseCacheDao.TTL_MILLIS]: past it, the rows are still more likely
+     * right than wrong, but they're old enough that flashing them up only to replace them a moment
+     * later is more jarring than a brief spinner - and they're dropped here rather than left to
+     * accumulate for the life of the install.
+     */
     fun listing(client: HeosClient, sid: String, cid: String?): Flow<BrowseListing> = flow {
         val cacheKey = cid ?: ROOT_CID
+        val freshEnoughSince = System.currentTimeMillis() - BrowseCacheDao.TTL_MILLIS
         val cached = cacheDao.getAllPages(sid, cacheKey)
-        if (cached.isNotEmpty()) {
+        if (cached.isNotEmpty() && cached.all { it.cachedAt >= freshEnoughSince }) {
             emit(
                 BrowseListing(
                     items = cached.sortedBy { it.rangeStart }.flatMap { it.itemsJson.fromCacheJson() },
@@ -68,6 +76,8 @@ class BrowseRepository @Inject constructor(
                     fromCache = true,
                 ),
             )
+        } else if (cached.isNotEmpty()) {
+            cacheDao.deleteOlderThan(freshEnoughSince)
         }
 
         val all = mutableListOf<BrowseItem>()
@@ -91,6 +101,10 @@ class BrowseRepository @Inject constructor(
             start += page.items.size
             emit(BrowseListing(items = all.toList(), isPlayableContainer = isPlayableContainer, fromCache = false))
         }
+        // Whatever the previous listing cached beyond where this one ended is gone from the server -
+        // see BrowseCacheDao.deletePagesFrom. Runs for start == 0 too, which is how a container that
+        // emptied out entirely stops painting its old contents from cache.
+        cacheDao.deletePagesFrom(sid, cacheKey, start)
         // An empty container (no pages at all, e.g. no share configured yet) never enters the
         // collect block above, so nothing marks loading finished without this fallback emission.
         if (start == 0) {

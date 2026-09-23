@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.getAndUpdate
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -59,20 +61,19 @@ class BridgeQueueController @Inject constructor(
     }
 
     fun replaceQueueAndPlay(items: List<BridgeQueueItem>, startIndex: Int = 0) {
-        _state.value = BridgeQueueLogic.replaceQueue(_state.value, items, startIndex)
+        _state.update { BridgeQueueLogic.replaceQueue(it, items, startIndex) }
         playCurrent()
     }
 
     /** Appends without disturbing playback; starts playing if the queue was empty. */
     fun addToQueue(items: List<BridgeQueueItem>) {
-        val before = _state.value
-        _state.value = BridgeQueueLogic.addToEnd(before, items)
+        val before = _state.getAndUpdate { BridgeQueueLogic.addToEnd(it, items) }
         if (before.currentIndex == -1 && _state.value.currentIndex == 0) playCurrent()
     }
 
     fun playAt(index: Int) {
         if (index !in _state.value.items.indices) return
-        _state.value = _state.value.copy(currentIndex = index, currentFormatInfo = null, currentArtwork = null)
+        _state.update { it.copy(currentIndex = index, currentFormatInfo = null, currentArtwork = null) }
         playCurrent()
     }
 
@@ -81,15 +82,15 @@ class BridgeQueueController @Inject constructor(
     fun previous() = stepAndPlay { BridgeQueueLogic.previous(it) }
 
     fun removeAt(index: Int) {
-        _state.value = BridgeQueueLogic.removeAt(_state.value, index)
+        _state.update { BridgeQueueLogic.removeAt(it, index) }
     }
 
     fun setRepeat(mode: RepeatMode) {
-        _state.value = BridgeQueueLogic.setRepeat(_state.value, mode)
+        _state.update { BridgeQueueLogic.setRepeat(it, mode) }
     }
 
     fun toggleShuffle() {
-        _state.value = BridgeQueueLogic.toggleShuffle(_state.value)
+        _state.update { BridgeQueueLogic.toggleShuffle(it) }
     }
 
     fun clear() {
@@ -151,9 +152,9 @@ class BridgeQueueController @Inject constructor(
 
             val formatInfo = runCatching { smbBridgeService.formatInfoFor(item.path) }.getOrNull()
             val artwork = runCatching { smbBridgeService.artworkFor(item.path) }.getOrNull()
-            // A fast next()/previous() may have moved on while this lookup was in flight.
-            if (_state.value.currentItem == item) {
-                _state.value = _state.value.copy(currentFormatInfo = formatInfo, currentArtwork = artwork)
+            _state.update {
+                // A fast next()/previous() may have moved on while this lookup was in flight.
+                if (it.currentItem == item) it.copy(currentFormatInfo = formatInfo, currentArtwork = artwork) else it
             }
         }
     }

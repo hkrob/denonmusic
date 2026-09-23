@@ -74,7 +74,13 @@ class AvrClient(private val connection: AvrConnection) {
      * (`MV505` -> 50.5 -> -29.5dB).
      */
     suspend fun volumeDb(): Double? {
-        val digits = connection.query("MV?", "MV").removePrefix("MV").takeWhile { it.isDigit() }
+        // Not a bare "MV" prefix match. `MV?` answers with *two* MV-prefixed lines - measured on the
+        // real AVR-X4500H, `MV40` then `MVMAX 98` - and only the first is the volume; `MVMAX` is the
+        // ceiling, and it also appears in the telemetry block this receiver free-runs while it's
+        // awake (see AvrConnection's note). A prefix match takes whichever arrives first, and on
+        // `MVMAX 98` that parses to no digits at all and reads back as null.
+        val line = connection.queryFirstMatching("MV?") { it.startsWith("MV") && !it.startsWith("MVMAX") }
+        val digits = line.removePrefix("MV").takeWhile { it.isDigit() }
         if (digits.isEmpty()) return null
         val value = if (digits.length == 3) digits.toInt() / 10.0 else digits.toInt().toDouble()
         return value - VOLUME_FLOOR_DB
@@ -83,7 +89,11 @@ class AvrClient(private val connection: AvrConnection) {
     suspend fun setVolumeDb(db: Double) {
         val value = (db + VOLUME_FLOOR_DB).coerceIn(0.0, 98.0)
         val whole = value.toInt()
-        val wireValue = if (value - whole >= 0.25) "${whole}5" else whole.toString().padStart(2, '0')
+        // Both forms pad the whole part to two digits: a half step below -70dB (whole < 10) built as
+        // "${whole}5" alone produced e.g. "MV55" for 5.5, which the receiver reads as 55 - a jump
+        // from -74.5dB to -25dB rather than the half-dB nudge asked for.
+        val paddedWhole = whole.toString().padStart(2, '0')
+        val wireValue = if (value - whole >= 0.25) "${paddedWhole}5" else paddedWhole
         connection.send("MV$wireValue")
     }
 

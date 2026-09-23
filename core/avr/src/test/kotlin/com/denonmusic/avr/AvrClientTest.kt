@@ -146,6 +146,35 @@ class AvrClientTest {
     }
 
     @Test
+    fun `volume ignores the receiver's free-running MVMAX telemetry line`() = runBlocking {
+        // The real AVR-X4500H emits `MVMAX 98` unprompted alongside the answer; it shares the `MV`
+        // prefix, and taking it as the answer parsed to no digits at all and returned null.
+        server.onLines("MV?", "MVMAX 98", "MV50")
+        connection.connect()
+
+        assertEquals(-30.0, client.volumeDb())
+    }
+
+    @Test
+    fun `setting a half dB step below -70dB pads the whole part to two digits`() = runBlocking {
+        connection.connect()
+
+        client.setVolumeDb(-74.5)
+
+        // 5.5 on the wire is "055", not "55" - the latter reads back as 55, i.e. -25dB.
+        assertEquals(listOf("MV055"), server.received)
+    }
+
+    @Test
+    fun `setting a whole dB step below -70dB stays two digits`() = runBlocking {
+        connection.connect()
+
+        client.setVolumeDb(-75.0)
+
+        assertEquals(listOf("MV05"), server.received)
+    }
+
+    @Test
     fun `mute state parses on and off`() = runBlocking {
         server.onLines("MU?", "MUON")
         connection.connect()

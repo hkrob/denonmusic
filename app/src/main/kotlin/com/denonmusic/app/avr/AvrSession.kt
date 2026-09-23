@@ -53,7 +53,7 @@ class AvrSession @Inject constructor() {
     fun stop() {
         sessionJob?.cancel()
         sessionJob = null
-        connection?.close()
+        connection?.shutdown()
         client = null
         _state.value = AvrConnectionState.Disconnected
     }
@@ -78,7 +78,9 @@ class AvrSession @Inject constructor() {
             } catch (t: Throwable) {
                 _state.value = AvrConnectionState.Failed(host, t.message ?: t.toString())
             } finally {
-                runCatching { connection?.close() }
+                // shutdown, not close: AvrConnection owns a CoroutineScope that close() leaves
+                // running, so a reconnect loop on a flaky network leaked one per attempt.
+                runCatching { connection?.shutdown() }
                 connection = null
                 client = null
             }

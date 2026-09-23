@@ -132,9 +132,9 @@ fun QueueScreen(playerViewModel: PlayerViewModel) {
                         onRemove = { playerViewModel.removeFromQueue(item.qid) },
                         onMoveUp = { if (index > 0) playerViewModel.moveQueueItem(item.qid, state.queue[index - 1].qid) },
                         onMoveDown = {
-                            if (index < state.queue.lastIndex - 1) {
-                                playerViewModel.moveQueueItem(item.qid, state.queue[index + 2].qid)
-                            }
+                            // Null past the end: the second-to-last row has no item after the one it
+                            // swaps with, and PlayerViewModel.moveQueueItem reads that as "to the end".
+                            playerViewModel.moveQueueItem(item.qid, state.queue.getOrNull(index + 2)?.qid)
                         },
                         canMoveUp = index > 0,
                         canMoveDown = index < state.queue.lastIndex,

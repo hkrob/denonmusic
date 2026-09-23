@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -149,7 +150,7 @@ class PlayerViewModel @Inject constructor(
         }
         viewModelScope.launch {
             bridgeQueueController.state.collectLatest { bridgeState ->
-                _uiState.value = _uiState.value.copy(bridgeQueue = bridgeState)
+                _uiState.update { it.copy(bridgeQueue = bridgeState) }
             }
         }
     }
@@ -195,18 +196,20 @@ class PlayerViewModel @Inject constructor(
         if (playerPid == null) {
             if (!_uiState.value.noHeosPlayerFound) {
                 eventsJob?.cancel()
-                _uiState.value = _uiState.value.copy(
-                    noHeosPlayerFound = true,
-                    pid = null,
-                    nowPlaying = null,
-                    playState = null,
-                    queue = emptyList(),
-                )
+                _uiState.update {
+                    it.copy(
+                        noHeosPlayerFound = true,
+                        pid = null,
+                        nowPlaying = null,
+                        playState = null,
+                        queue = emptyList(),
+                    )
+                }
             }
             return
         }
         val recovered = _uiState.value.pid != playerPid
-        _uiState.value = _uiState.value.copy(pid = playerPid, noHeosPlayerFound = false)
+        _uiState.update { it.copy(pid = playerPid, noHeosPlayerFound = false) }
         if (recovered) subscribeEvents(playerPid)
         refreshAll(playerPid)
         refreshQueue(playerPid)
@@ -218,13 +221,15 @@ class PlayerViewModel @Inject constructor(
         val playState = runCatching { client.getPlayState(pid) }.getOrNull()
         val volume = runCatching { client.getVolume(pid) }.getOrNull()
         val playMode = runCatching { client.getPlayMode(pid) }.getOrNull()
-        _uiState.value = _uiState.value.copy(
-            nowPlaying = nowPlaying,
-            playState = playState,
-            volume = volume,
-            repeat = playMode?.repeat,
-            shuffle = playMode?.shuffle,
-        )
+        _uiState.update {
+            it.copy(
+                nowPlaying = nowPlaying,
+                playState = playState,
+                volume = volume,
+                repeat = playMode?.repeat,
+                shuffle = playMode?.shuffle,
+            )
+        }
         if (playState == PlayState.Play && lastPlayState != PlayState.Play) {
             applyBitPerfectPolicyOnPlaybackStart()
         }
@@ -245,7 +250,7 @@ class PlayerViewModel @Inject constructor(
             sampleRateKhz = runCatching { client.sampleRateKhz() }.getOrNull(),
             activeOutputChannels = runCatching { client.outputChannels() }.getOrDefault(emptyList()).size,
         )
-        _uiState.value = _uiState.value.copy(technicalInfo = info)
+        _uiState.update { it.copy(technicalInfo = info) }
     }
 
     /**
@@ -260,7 +265,7 @@ class PlayerViewModel @Inject constructor(
     private suspend fun refreshQueue(pid: String) {
         val client = session.heosClient ?: return
         val items = runCatching { client.getQueue(pid) }.getOrNull().orEmpty()
-        _uiState.value = _uiState.value.copy(queue = items)
+        _uiState.update { it.copy(queue = items) }
     }
 
     private fun subscribeEvents(pid: String) {
@@ -275,13 +280,13 @@ class PlayerViewModel @Inject constructor(
                     "player_now_playing_progress" -> {
                         val position = frame.attributes["cur_pos"]?.toLongOrNull() ?: 0L
                         val duration = frame.attributes["duration"]?.toLongOrNull() ?: 0L
-                        _uiState.value = _uiState.value.copy(progress = Progress(position, duration))
+                        _uiState.update { it.copy(progress = Progress(position, duration)) }
                     }
                     "player_queue_changed" -> refreshQueue(pid)
                 }
                 if (frame.eventName == "player_volume_changed") {
                     frame.attributes["mute"]?.let { mute ->
-                        _uiState.value = _uiState.value.copy(muted = mute == "on")
+                        _uiState.update { it.copy(muted = mute == "on") }
                     }
                 }
             }
@@ -294,7 +299,7 @@ class PlayerViewModel @Inject constructor(
         val next = if (_uiState.value.playState == PlayState.Play) PlayState.Pause else PlayState.Play
         viewModelScope.launch {
             runCatching { client.setPlayState(pid, next) }
-                .onSuccess { _uiState.value = _uiState.value.copy(playState = next) }
+                .onSuccess { _uiState.update { it.copy(playState = next) } }
         }
     }
 
@@ -317,7 +322,7 @@ class PlayerViewModel @Inject constructor(
         val pid = _uiState.value.pid ?: return
         viewModelScope.launch {
             runCatching { client.setPlayState(pid, PlayState.Stop) }
-                .onSuccess { _uiState.value = _uiState.value.copy(playState = PlayState.Stop) }
+                .onSuccess { _uiState.update { it.copy(playState = PlayState.Stop) } }
         }
     }
 
@@ -327,7 +332,7 @@ class PlayerViewModel @Inject constructor(
         val next = !_uiState.value.muted
         viewModelScope.launch {
             runCatching { client.setMute(pid, next) }
-                .onSuccess { _uiState.value = _uiState.value.copy(muted = next) }
+                .onSuccess { _uiState.update { it.copy(muted = next) } }
         }
     }
 
@@ -342,7 +347,7 @@ class PlayerViewModel @Inject constructor(
         val pid = _uiState.value.pid ?: return
         viewModelScope.launch {
             runCatching { client.setVolume(pid, level) }
-                .onSuccess { _uiState.value = _uiState.value.copy(volume = level) }
+                .onSuccess { _uiState.update { it.copy(volume = level) } }
         }
     }
 
@@ -353,7 +358,7 @@ class PlayerViewModel @Inject constructor(
         val shuffle = _uiState.value.shuffle ?: false
         viewModelScope.launch {
             runCatching { client.setPlayMode(pid, mode, shuffle) }
-                .onSuccess { _uiState.value = _uiState.value.copy(repeat = mode) }
+                .onSuccess { _uiState.update { it.copy(repeat = mode) } }
         }
     }
 
@@ -365,7 +370,7 @@ class PlayerViewModel @Inject constructor(
         val next = !(_uiState.value.shuffle ?: false)
         viewModelScope.launch {
             runCatching { client.setPlayMode(pid, repeat, next) }
-                .onSuccess { _uiState.value = _uiState.value.copy(shuffle = next) }
+                .onSuccess { _uiState.update { it.copy(shuffle = next) } }
         }
     }
 
@@ -381,20 +386,27 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             // Optimistic removal: player_queue_changed will also fire and refresh from the receiver,
             // but that round trip is visibly slower than the swipe-to-dismiss animation it follows.
-            _uiState.value = _uiState.value.copy(queue = _uiState.value.queue.filterNot { it.qid == qid })
+            _uiState.update { state -> state.copy(queue = state.queue.filterNot { it.qid == qid }) }
             runCatching { client.removeFromQueue(pid, listOf(qid)) }
                 .onFailure { refreshQueue(pid) }
         }
     }
 
-    /** Moves [qid] to just before [beforeQid], or to the end when [beforeQid] is null. */
+    /**
+     * Moves [qid] to just before [beforeQid], or to the end when [beforeQid] is null.
+     *
+     * HEOS's `move_queue_item` inserts before `dqid`, and its queue ids are 1-based positions, so
+     * one past the last position is what "to the end" means on the wire. Returning early on a null
+     * [beforeQid] instead - which is what this used to do - made QueueScreen's "move down" button a
+     * no-op on the second-to-last row, the one row whose move has no following item to land before.
+     */
     fun moveQueueItem(qid: Int, beforeQid: Int?) {
         val client = session.heosClient ?: return
         val pid = _uiState.value.pid ?: return
-        val destination = beforeQid ?: return
+        val destination = beforeQid ?: (_uiState.value.queue.size + 1)
         viewModelScope.launch {
             runCatching { client.moveQueueItem(pid, listOf(qid), destination) }
-                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Move failed") }
+                .onFailure { e -> _uiState.update { it.copy(message = e.message ?: "Move failed") } }
         }
     }
 
@@ -403,7 +415,7 @@ class PlayerViewModel @Inject constructor(
         val pid = _uiState.value.pid ?: return
         viewModelScope.launch {
             runCatching { client.clearQueue(pid) }
-                .onSuccess { _uiState.value = _uiState.value.copy(queue = emptyList()) }
+                .onSuccess { _uiState.update { it.copy(queue = emptyList()) } }
         }
     }
 
@@ -412,13 +424,13 @@ class PlayerViewModel @Inject constructor(
         val pid = _uiState.value.pid ?: return
         viewModelScope.launch {
             runCatching { client.saveQueueAsPlaylist(pid, name) }
-                .onFailure { _uiState.value = _uiState.value.copy(message = it.message ?: "Save failed") }
-                .onSuccess { _uiState.value = _uiState.value.copy(message = "Saved as \"$name\"") }
+                .onFailure { e -> _uiState.update { it.copy(message = e.message ?: "Save failed") } }
+                .onSuccess { _uiState.update { it.copy(message = "Saved as \"$name\"") } }
         }
     }
 
     fun dismissMessage() {
-        _uiState.value = _uiState.value.copy(message = null)
+        _uiState.update { it.copy(message = null) }
     }
 
     // -- phase-6 bridge queue pass-throughs, for QueueScreen when isBridgeModeActive -------------

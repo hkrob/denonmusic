@@ -51,6 +51,15 @@ interface BrowseCacheDao {
     @Query("DELETE FROM browse_cache WHERE sid = :sid AND cid = :cid")
     suspend fun invalidate(sid: String, cid: String)
 
+    /**
+     * Drops the pages of a container at or past [fromRangeStart] - what a re-listing needs once it
+     * knows the container's new size. Upserting page by page only ever overwrites the pages the
+     * fresh listing still has; a container that shrank (tracks deleted, a folder reorganised on the
+     * NAS) kept its now-orphaned tail pages, and the next cache paint showed them as ghost rows.
+     */
+    @Query("DELETE FROM browse_cache WHERE sid = :sid AND cid = :cid AND rangeStart >= :fromRangeStart")
+    suspend fun deletePagesFrom(sid: String, cid: String, fromRangeStart: Int)
+
     @Query("DELETE FROM browse_cache WHERE cachedAt < :olderThan")
     suspend fun deleteOlderThan(olderThan: Long)
 

@@ -36,8 +36,9 @@ object QueueTargetResolver {
      * level) never gets that flag from the server, so a plain `addToQueue(cid = cid)` silently does
      * nothing for it.
      *
-     * [onProgress] is called with the running count of targets gathered so far, for callers that
-     * report progress on a long scan. Bounded by [maxDepth] and [maxTargets]; the returned list may
+     * [onProgress] is called with the running count of targets gathered across the whole walk, not
+     * per level - a per-level count jumps backwards every time the walk descends into a smaller
+     * subtree, which reads as progress being lost. Bounded by [maxDepth] and [maxTargets]; the returned list may
      * slightly exceed [maxTargets], since the walk stops at the first subtree that crosses it rather
      * than truncating mid-container - callers are expected to treat overshoot as "too many, refuse"
      * rather than silently queueing a partial folder.
@@ -49,7 +50,15 @@ object QueueTargetResolver {
         maxDepth: Int = DEFAULT_MAX_RECURSE_DEPTH,
         maxTargets: Int = DEFAULT_MAX_QUEUE_TARGETS,
         onProgress: (gathered: Int) -> Unit = {},
-    ): List<QueueTarget> = collectAtDepth(client, sid, cid, maxDepth, maxTargets, onProgress, depth = 0)
+    ): List<QueueTarget> {
+        // One counter for the whole walk, so what the caller sees only ever climbs.
+        var gathered = 0
+        val report: (Int) -> Unit = { added ->
+            gathered += added
+            onProgress(gathered)
+        }
+        return collectAtDepth(client, sid, cid, maxDepth, maxTargets, report, depth = 0)
+    }
 
     private suspend fun collectAtDepth(
         client: HeosClient,
@@ -57,7 +66,8 @@ object QueueTargetResolver {
         cid: String?,
         maxDepth: Int,
         maxTargets: Int,
-        onProgress: (gathered: Int) -> Unit,
+        /** Called with how many targets this step just added, never a running total - see [collect]. */
+        reportAdded: (Int) -> Unit,
         depth: Int,
     ): List<QueueTarget> {
         if (depth > maxDepth) return emptyList()
@@ -75,7 +85,7 @@ object QueueTargetResolver {
 
         if (subContainers.isEmpty()) {
             val leaf = if (isPlayable && cid != null) listOf(QueueTarget(sid, cid, null)) else ownTracks
-            onProgress(leaf.size)
+            reportAdded(leaf.size)
             return leaf
         }
 
@@ -86,10 +96,9 @@ object QueueTargetResolver {
         // tracks whenever any subfolder existed at all - "Nothing playable found" on a folder with
         // playable tracks plainly visible in the browse listing above it.
         val results = ownTracks.toMutableList()
-        onProgress(results.size)
+        reportAdded(ownTracks.size)
         for (sub in subContainers) {
-            results += collectAtDepth(client, sid, sub.cid, maxDepth, maxTargets, onProgress, depth + 1)
-            onProgress(results.size)
+            results += collectAtDepth(client, sid, sub.cid, maxDepth, maxTargets, reportAdded, depth + 1)
             if (results.size > maxTargets) break
         }
         return results

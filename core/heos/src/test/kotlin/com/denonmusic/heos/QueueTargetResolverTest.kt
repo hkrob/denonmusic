@@ -180,4 +180,24 @@ class QueueTargetResolverTest {
         assertTrue(seen.isNotEmpty(), "onProgress was never called")
         assertEquals(targets.size, seen.last(), "the final progress report should match the result size")
     }
+
+    @Test
+    fun `progress only ever climbs as the walk descends into smaller subtrees`() = runBlocking {
+        // CD1 has three tracks, CD2 has one: reporting each level's own count made the running total
+        // go 3 then 1, which reads in the UI as progress being lost.
+        serveTree(
+            mapOf(
+                "album" to Level(listOf(folder("CD1", "cd1"), folder("CD2", "cd2"))),
+                "cd1" to Level(listOf(track("A", "a1"), track("A2", "a2"), track("A3", "a3"))),
+                "cd2" to Level(listOf(track("B", "b1"))),
+            ),
+        )
+        connection.connect()
+
+        val seen = mutableListOf<Int>()
+        QueueTargetResolver.collect(client, sid = "1024", cid = "album") { seen += it }
+
+        assertEquals(seen.sorted(), seen, "progress went backwards: $seen")
+        assertEquals(4, seen.last())
+    }
 }

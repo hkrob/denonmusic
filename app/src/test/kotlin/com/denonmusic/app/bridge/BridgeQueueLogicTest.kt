@@ -17,6 +17,23 @@ class BridgeQueueLogicTest {
     }
 
     @Test
+    fun `replaceQueue with no items leaves nothing playing instead of throwing`() {
+        // items.indices is an empty range when the list is empty, and coerceIn throws on one rather
+        // than clamping - every caller guarded against this by hand, which is one guard from a crash.
+        val state = BridgeQueueLogic.replaceQueue(BridgeQueueState(), items(), startIndex = 0)
+
+        assertEquals(-1, state.currentIndex)
+        assertNull(state.currentItem)
+    }
+
+    @Test
+    fun `replaceQueue clamps a start index past the end`() {
+        val state = BridgeQueueLogic.replaceQueue(BridgeQueueState(), items("a", "b"), startIndex = 9)
+
+        assertEquals("b", state.currentItem?.path)
+    }
+
+    @Test
     fun `addToEnd appends without disturbing the current index`() {
         val playing = BridgeQueueLogic.replaceQueue(BridgeQueueState(), items("a", "b"), startIndex = 1)
 
