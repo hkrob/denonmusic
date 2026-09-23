@@ -53,6 +53,23 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.8" to listOf(
+        "Fixed the queue's move-down button doing nothing on the second-to-last track - the one " +
+            "row whose move has no following track to land in front of, and so has to go to the end.",
+        "Fixed Browse showing tracks that are no longer there: a folder that shrank kept its " +
+            "removed rows in the offline cache indefinitely, and that cache never expired or pruned.",
+        "Fixed the app reporting itself connected to the receiver for up to 30 seconds after the " +
+            "connection had actually dropped - which also stopped it reconnecting on its own.",
+        "Fixed a leak of network connections on every reconnect, and unbounded memory growth " +
+            "during long bridge (SMB) playback sessions.",
+        "Auto-dim no longer keeps a once-a-second timer running while the app is in the " +
+            "background, and returning to the app no longer dims the screen immediately.",
+        "Fixed the LAN control web UI's scan progress counting backwards through nested folders, " +
+            "and two simultaneous scans blanking each other's progress line.",
+        "Fixed the direct-AVR volume commands - not the app's own volume slider, which goes " +
+            "through HEOS: a half-dB step below -70 dB set a far louder level than asked for, and " +
+            "reading the volume back could come out empty.",
+    ),
     "0.1.7" to listOf(
         "Moved input select from Settings to the AVR tab, and made it actually switch the " +
             "receiver's input live - it previously only saved a setting despite looking like a " +
