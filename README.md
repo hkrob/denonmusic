@@ -34,7 +34,7 @@ to play an album.
 app/            Compose UI, ViewModels, Hilt wiring, the SMB bridge queue, the LAN control API.
 core/heos/      HEOS CLI protocol: codec, socket, event stream, typed client.  Pure JVM.
 core/avr/       Raw Denon telnet control (port 23): power, input, sound mode, signal info.  Pure JVM.
-core/smb/       SMB access and audio header parsing (FLAC/DSF/DFF/WAV/MP3).  Pure JVM.
+core/smb/       SMB access and audio header parsing (FLAC/DSF/DFF/MP3/M4A-MP4).  Pure JVM.
 core/data/      Room caches (browse listings, breadcrumb, media info) and DataStore settings.
 tools/probe.py  Protocol probe for answering open questions against a real receiver.
 ```
@@ -53,8 +53,13 @@ JDK 17+ machine with no Android SDK installed:
 ./gradlew :app:testDebugUnitTest :core:heos:test :core:avr:test :core:smb:test
 ```
 
-The Android Gradle plugin needs JDK 17 or newer; Android Studio's bundled JBR works if your system
-default is older.
+The Android Gradle plugin needs JDK 17 or newer. If your system default is older, point `JAVA_HOME`
+at Android Studio's bundled JBR - on Windows that is
+`C:/Program Files/Android/Android Studio/jbr` - or Gradle fails during startup rather than with
+anything that names the real problem.
+
+Style is enforced by one ktlint config shared with the IDE, so `./gradlew ktlintCheck` and your
+editor agree; rules live in `.editorconfig`.
 
 ## Getting your music to the receiver
 
@@ -166,3 +171,12 @@ set. It is meant for a trusted home LAN, not the open internet.
 Shipping. The protocol layer, probe, and the full Android app (browse, queue, now playing, AVR panel,
 SMB bridge playback, metadata overlay, LAN control) are in place and released - see the About tab or
 GitHub Releases for the current version.
+
+Further reading, for anyone picking the project up:
+
+| Document | What it's for |
+|---|---|
+| [`docs/local-setup.md`](docs/local-setup.md) | Current state, build gotchas, and a dated log of every session against the real receiver - including what was measured rather than assumed |
+| [`docs/plan.md`](docs/plan.md) | The original design plan. Why the architecture is what it is; kept unedited, so read it as history |
+| [`docs/heos-dlna-plex-jellyfin-conflict.md`](docs/heos-dlna-plex-jellyfin-conflict.md) | Why the library is served over Plex DLNA rather than a HEOS-native SMB share |
+| [`.github/workflows/README-release.md`](.github/workflows/README-release.md) | Signing setup and the release procedure |

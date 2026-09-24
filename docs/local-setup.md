@@ -1,23 +1,51 @@
 # Picking this up in a local session
 
-This project was started in a cloud container with no route to the LAN, so nothing has ever talked
-to the real receiver or a real phone. A local session can. This file is the handoff.
+The handoff file for local sessions - the ones with a route to the LAN, and therefore to the real
+receiver at `10.1.10.50` and a real phone. (The project was started in a cloud container that had
+neither, which is why so much below is phrased as "verified against real hardware": for the first
+few phases that could not be taken for granted.)
+
+Everything from "Probe findings" down is append-only history in date order. Read this top section
+for the current state, and the last section for what happened most recently.
 
 ## Where the work stands
 
-Done and verified (27/27 tests passing):
+**Shipping.** v0.1.8 (`versionCode` 9) is published to GitHub Releases and the in-app updater
+offers it. All six phases in [`plan.md`](plan.md) are done and verified end-to-end against the real
+AVR-X4500H. (A later "improvement plan", referenced by track letter further down this file, was
+never committed here - its Tracks A-D are all done, so nothing is lost by its absence; the sections
+below record what each one produced.)
 
-- `core/heos` - the full HEOS CLI protocol layer. Pure JVM, no Android dependencies, so
-  `./gradlew :core:heos:test` runs anywhere with a JDK 17+.
-- `tools/probe.py` - receiver probe. Standard library only, nothing to install.
-- `.github/workflows` - CI runs the protocol tests; the Android job now builds `:app` since the
-  module exists. A `v*` tag builds a signed APK once the four keystore secrets are set.
-- **Probe run against the real AVR-X4500H (10.1.10.50)** - see "Probe findings" below.
-- **Phase 2**: `:core:data` (Room browse stack + cache, DataStore settings) and `:app` (Hilt,
-  Compose Browse screen, source auto-detect, browse memory, the four `aid` queue actions) exist,
-  build (`./gradlew assembleDebug`), install, and have been driven end-to-end on a real phone
-  against the real receiver (see below). `:core:avr`, `:core:smb`, `:feature:probe` are still
-  commented out in `settings.gradle.kts`.
+- Every module in `settings.gradle.kts` is live: `:core:heos`, `:core:avr` and `:core:smb` are pure
+  JVM, plus `:app` and `:core:data` when an Android SDK is present. Only `:feature:probe` is still
+  commented out, and nothing wants it - `tools/probe.py` covers that ground.
+- **235 unit tests, 0 failures, 0 skipped.** ktlint clean.
+- Verified on real hardware: browse, all four `aid` queue actions, gapless album playback,
+  force-stop-and-keep-playing, browse memory across a reinstall, the AVR panel, the SMB bridge
+  fallback, the Now Playing technical panel with chain integrity, and LAN control.
+
+### Building here
+
+The Android Gradle plugin needs JDK 17+ and this machine's default `java` is 11, so `JAVA_HOME` has
+to point at Android Studio's bundled JBR or Gradle fails before it does anything:
+
+```sh
+export JAVA_HOME="C:/Program Files/Android/Android Studio/jbr"
+./gradlew :app:testDebugUnitTest :core:heos:test :core:avr:test :core:smb:test
+./gradlew ktlintCheck
+./gradlew :app:assembleDebug
+```
+
+### Local-machine gotchas
+
+- **`keystore.properties` has pointed at a path that no longer exists** (`C:/rob/local/dev/...`),
+  which fails `assembleRelease` with a missing-file error. Both it and `release.keystore` live at
+  the repo root and are gitignored; check `storeFile` first if a release build won't sign. Before
+  pointing it anywhere new, confirm the fingerprint with `keytool` - it has to match
+  `$ExpectedSigner` in `publish-release.ps1`, or the APK will not install over an existing copy.
+- **Home Assistant's `denonavr` integration (`connaught`) competes for the receiver's control
+  ports.** While it holds its connection, telnet:23 and HEOS:1255 from anywhere else get reset
+  instantly. See the probe findings below for how to free it.
 
 ## Probe findings (2026-09-13, against 10.1.10.50)
 
@@ -467,6 +495,9 @@ the Now Playing technical panel + chain-integrity indicator UI that consumes `:c
 folder-level format badges in Browse, and Phase 6 (bridge-mode fallback polish - the degraded
 `play_stream` path already exists from earlier testing but was never meant to be the primary path).
 
+> Superseded: everything in that "next up" list shipped in the sections below, **except**
+> `EncryptedSharedPreferences`, which is still outstanding. See the last section of this file.
+
 ## Plex DLNA as the primary source, and three real bugs it exposed
 
 `sid 1024` stopped being empty once Plex's DLNA server was fixed up on the unraid side (a port
@@ -621,3 +652,41 @@ branch, the already-shipped client-side A-Z jump index (`AlphabetJumpIndex` in `
 the correct and sufficient answer here - no protocol-level search code was added. If a future
 receiver/firmware/Plex version fixes `browse/search`, re-probe with the same three commands before
 reconsidering.
+
+## Review pass, and v0.1.8 (2026-09-24)
+
+A read of all ~96 Kotlin files, fixing what it found. The whole list is in the `0.1.8` changelog
+entry in `AboutScreen.kt`; the ones worth knowing as protocol or lifecycle facts:
+
+- **`setVolumeDb` sent a badly wrong value for half-dB steps below -70 dB.** Only the whole-dB
+  branch zero-padded, so -74.5 dB went out as `MV55`, which the receiver reads as -25 dB - a 50 dB
+  error, in the loud direction. This is the direct-AVR path (`:core:avr`), not the app's own volume
+  slider, which goes through HEOS and was never affected.
+- **`MV?` answers with two MV-prefixed lines, not one.** Verified live against 10.1.10.50: `MV40`
+  followed by `MVMAX 98`. `volumeDb()` matched a bare `"MV"` prefix, so it could pick up `MVMAX`,
+  parse no digits out of it and return null. It now excludes `MVMAX` explicitly. Any future
+  response-prefix match on this protocol needs the same care - there are no correlation ids on
+  port 23, so prefix matching is all there is.
+- **`HeosSession`/`AvrSession` leaked two connections per reconnect** by calling `close()` (which
+  cancels the reader job but leaves the connection's own `CoroutineScope` running) instead of
+  `shutdown()`. `HeosSession` also sat at `Connected(host)` through the whole backoff delay while
+  `heosClient` was already null, and `start(host)` early-returns on `Connected(host)` - so it
+  refused to reconnect to the host it had just lost.
+- **`AvrConnection` had a real data race**: the response buffer was appended from the reader
+  coroutine under a lock, but read without one from the polling caller on a different IO thread.
+  Now snapshot-based.
+- The release-notes generator was chopping every wrapped changelog bullet into its own fragment, in
+  both `publish-release.ps1` and `.github/workflows/release.yml`. v0.1.6's and v0.1.7's published
+  notes still show the damage; see the note under "Cutting a release" in
+  [`README-release.md`](../.github/workflows/README-release.md) before editing either parser.
+
+### Open questions left deliberately alone
+
+- **Does the receiver really free-run telemetry "roughly once a second"?** `AvrConnection`'s own doc
+  comment says it does. Tapping port 23 for 12 s produced **zero** unsolicited lines - but the unit
+  was in `PWSTANDBY`, which plausibly explains it by itself. Not enough to rewrite the comment
+  from. Re-check with something playing before either trusting or correcting it.
+- **Both passwords are still in plain DataStore.** `smbPassword` and `lanControlPassword` in
+  `SettingsRepository` are unencrypted preferences holding a real NAS account's credentials. The
+  `EncryptedSharedPreferences` migration flagged under "Continuing the branch" above is still the
+  oldest outstanding item in this repo.

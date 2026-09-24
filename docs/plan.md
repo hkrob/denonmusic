@@ -1,5 +1,14 @@
 # DenonMusic — Android controller for SMB music on an AVR-X4500H
 
+> **This is the original design plan, written before any code existed, and kept as-is.** All six
+> phases have shipped; the app is released. Read it for *why* the architecture is what it is -
+> especially "The fact that shapes everything", which the whole codebase follows from - not for
+> current state. Where it disagrees with reality, reality won: the OUTPUT map turned out to be
+> telnet `CV?` rather than the ajax API, the release secrets are named `RELEASE_*`, and
+> `:feature:probe` was never built because `tools/probe.py` covered it. Current state is in
+> [`local-setup.md`](local-setup.md); the user-facing description is in
+> [`../README.md`](../README.md).
+
 ## Context
 
 Play music held on SMB (Unraid) through a Denon AVR-X4500H from an Android app: simple playback and

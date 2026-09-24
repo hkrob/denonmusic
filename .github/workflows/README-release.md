@@ -12,17 +12,27 @@ keytool -genkeypair -v -keystore release.keystore -alias denonmusic `
   -keyalg RSA -keysize 2048 -validity 10000
 ```
 
-Keep `release.keystore` **outside the repo** (it's already covered by `.gitignore` as `*.keystore`)
-and back it up somewhere durable and offline. See "Security notes" below on why - losing it is
-effectively unrecoverable on this app's `minSdk`.
+Back the keystore up somewhere durable and offline, and never let it into a commit. See "Security
+notes" below on why - losing it is effectively unrecoverable on this app's `minSdk`. `.gitignore`
+covers `*.keystore`/`*.jks`, so the working copy sitting at the repo root (which is where this
+machine keeps it) stays out of git; it is the *backup* that has to live somewhere else.
 
-Create `keystore.properties` next to it (also gitignored) for local release builds:
+Create `keystore.properties` alongside it (also gitignored) for local release builds:
 
 ```properties
 storeFile=C:/path/to/release.keystore
 storePassword=...
 keyAlias=denonmusic
 keyPassword=...
+```
+
+`storeFile` is an absolute path, so it goes stale if the checkout ever moves - a release build that
+fails on a missing keystore file usually means this line, not a broken signing setup. Verify any
+keystore before you point at it; the fingerprint has to be the one pinned in step 2, because
+Android will not install an update signed with a different key:
+
+```powershell
+keytool -list -v -keystore release.keystore -alias denonmusic | Select-String SHA256
 ```
 
 ### 2. Pin the signing certificate fingerprint
@@ -77,6 +87,14 @@ only, never values.
 2. Add a `CHANGELOG` entry for the new `versionName` in
    `app/src/main/kotlin/com/denonmusic/app/about/AboutScreen.kt`. The workflow reads the release
    notes from it and fails if it is missing or empty.
+
+   That list is parsed out of Kotlin source by regex, in **two places that must stay in step**:
+   `release.yml` (Python) and `publish-release.ps1` (PowerShell). A bullet too long for one line is
+   written as a string concatenation, `"first half " + "second half"`, and both parsers collapse
+   those joins before matching literals - without that, every continuation line becomes a bullet of
+   its own and the notes ship split mid-sentence, which is exactly how v0.1.6 and v0.1.7 went out.
+   If you touch either parser, run `publish-release.ps1 -DryRun` (or the workflow with `dry_run`)
+   and read the notes it prints before publishing.
 3. Merge to this repo's default branch (`claude/android-smb-denon-player-9710bx` as of writing -
    `publish-release.ps1` checks it explicitly; update `$ReleaseBranch` there if it's ever renamed).
 4. Run the **Release** workflow (`workflow_dispatch`), or push a `v<versionName>` tag.
