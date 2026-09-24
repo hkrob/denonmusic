@@ -69,6 +69,9 @@ private val CHANGELOG = listOf(
         "Fixed the direct-AVR volume commands - not the app's own volume slider, which goes " +
             "through HEOS: a half-dB step below -70 dB set a far louder level than asked for, and " +
             "reading the volume back could come out empty.",
+        "Fixed the release notes shown here and on GitHub being chopped into fragments " +
+            "mid-sentence, as 0.1.6 and 0.1.7 above still are - the generator broke each bullet " +
+            "apart at every line it was wrapped across.",
     ),
     "0.1.7" to listOf(
         "Moved input select from Settings to the AVR tab, and made it actually switch the " +

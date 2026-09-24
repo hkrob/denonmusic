@@ -92,8 +92,13 @@ jobs:
           entry = re.search('"' + re.escape(version) + r'"\s*to\s*listOf\((?P<body>.*?)\r?\n\s*\)', about, re.S)
           if not entry:
               sys.exit(f"No CHANGELOG entry for {version} in AboutScreen.kt — add one before publishing.")
+          # A bullet too long for one line is written as a Kotlin string concatenation
+          # ("a " + "b"), so collapse the joins before matching literals - otherwise every
+          # continuation line becomes a bullet of its own, which is how v0.1.7 shipped notes
+          # split mid-sentence. Must stay in step with publish-release.ps1's own parser.
+          body = re.sub(r'"\s*\+\s*"', '', entry.group('body'))
           bullets = [b.replace('\\"', '"').replace('\\\\', '\\')
-                     for b in re.findall(r'"((?:[^"\\]|\\.)*)"', entry.group('body'))]
+                     for b in re.findall(r'"((?:[^"\\]|\\.)*)"', body)]
           if not bullets:
               sys.exit(f"CHANGELOG entry for {version} is empty.")
           print("\n".join(f"- {b}" for b in bullets))

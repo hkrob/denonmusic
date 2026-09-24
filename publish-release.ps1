@@ -63,7 +63,12 @@ $about = Get-Content $aboutPath -Raw
 $entryPattern = '"' + [regex]::Escape($Version) + '"\s*to\s*listOf\((?<body>.*?)\r?\n\s*\)'
 $entry = [regex]::Match($about, $entryPattern, 'Singleline')
 if (-not $entry.Success) { throw "No CHANGELOG entry for $Version in AboutScreen.kt — add one before publishing." }
-$bullets = [regex]::Matches($entry.Groups['body'].Value, '"((?:[^"\\]|\\.)*)"') |
+# A bullet too long for one line is written as a Kotlin string concatenation ("a " + "b"), so
+# the joins have to be collapsed before matching literals - otherwise every continuation line
+# becomes a bullet of its own, which is how v0.1.7 shipped notes split mid-sentence. Must stay in
+# step with .github/workflows/release.yml's own copy of this parser.
+$body = $entry.Groups['body'].Value -replace '"\s*\+\s*"', ''
+$bullets = [regex]::Matches($body, '"((?:[^"\\]|\\.)*)"') |
     ForEach-Object { $_.Groups[1].Value -replace '\\"', '"' -replace '\\\\', '\' }
 if (-not $bullets) { throw "CHANGELOG entry for $Version is empty." }
 $Notes = ($bullets | ForEach-Object { "- $_" }) -join "`n"
