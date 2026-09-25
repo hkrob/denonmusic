@@ -1,6 +1,9 @@
 package com.denonmusic.app.update
 
 import org.junit.jupiter.api.Test
+import org.w3c.dom.Element
+import javax.xml.parsers.DocumentBuilder
+import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -25,7 +28,42 @@ private const val SAMPLE_FEED = """<?xml version="1.0" encoding="UTF-8"?>
 </feed>
 """
 
+/**
+ * A factory shaped like Android's, where the optional JAXP setters throw instead of quietly doing
+ * nothing.
+ *
+ * This is the whole reason 0.1.9's update check failed on a real phone while every JVM test passed:
+ * the desktop JAXP base class only throws from `setXIncludeAware` when asked for `true`, so
+ * `isXIncludeAware = false` is a no-op here and an `UnsupportedOperationException` on Android
+ * ("This parser does not support specification Unknown version 0.0", quotes and all).
+ */
+private class AndroidLikeFactory(private val delegate: DocumentBuilderFactory) : DocumentBuilderFactory() {
+    override fun newDocumentBuilder(): DocumentBuilder = delegate.newDocumentBuilder()
+    override fun setAttribute(name: String?, value: Any?) = delegate.setAttribute(name, value)
+    override fun getAttribute(name: String?): Any = delegate.getAttribute(name)
+    override fun setFeature(name: String?, value: Boolean): Unit = unsupported()
+    override fun getFeature(name: String?): Boolean = unsupported()
+    override fun setXIncludeAware(state: Boolean): Unit = unsupported()
+    override fun isXIncludeAware(): Boolean = unsupported()
+    override fun setExpandEntityReferences(expandEntityRef: Boolean): Unit = unsupported()
+
+    private fun unsupported(): Nothing = throw UnsupportedOperationException("not supported on this parser")
+}
+
 class UpdateManagerTest {
+
+    @Test
+    fun `hardening a parser whose optional setters throw still leaves it usable`() {
+        // Best-effort is the point: a parser that cannot be locked down should still parse the feed,
+        // because an update check that dies is worse than one that skipped a defence it never needed
+        // against GitHub's own HTTPS feed.
+        val factory = UpdateManager.harden(AndroidLikeFactory(DocumentBuilderFactory.newInstance()))
+
+        val document = factory.newDocumentBuilder().parse(SAMPLE_FEED.byteInputStream())
+
+        val entry = document.getElementsByTagName("entry").item(0) as Element
+        assertEquals("v0.1.4", entry.getElementsByTagName("title").item(0).textContent.trim())
+    }
 
     @Test
     fun `parses the tag and notes off the first entry of the releases feed`() {

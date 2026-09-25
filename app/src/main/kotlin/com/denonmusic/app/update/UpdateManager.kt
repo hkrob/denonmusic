@@ -114,16 +114,26 @@ object UpdateManager {
      * Doctype declarations and external entities off. The feed is GitHub's own over HTTPS, so this
      * isn't guarding a realistic attack today - but a parser that resolves whatever a remote
      * document tells it to is worth not shipping regardless of who is currently on the other end.
+     *
+     * **Every setter here is best-effort.** JAXP's own base class implements the optional ones as
+     * `throw UnsupportedOperationException`, and Android does not override them: on a real device
+     * `isXIncludeAware = false` threw `This parser does not support specification "Unknown" version
+     * "0.0"`, which surfaced in the About tab as the update check failing outright. Hardening that
+     * takes the updater down with it is worse than the exposure it was closing, and a JVM unit test
+     * cannot catch it - the desktop Xerces this runs against in tests supports all of these.
      */
-    private fun secureDocumentBuilderFactory(): DocumentBuilderFactory =
-        DocumentBuilderFactory.newInstance().apply {
+    internal fun harden(factory: DocumentBuilderFactory): DocumentBuilderFactory =
+        factory.apply {
             runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
             runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
             runCatching { setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
             runCatching { setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false) }
-            isXIncludeAware = false
-            isExpandEntityReferences = false
+            runCatching { isXIncludeAware = false }
+            runCatching { isExpandEntityReferences = false }
         }
+
+    private fun secureDocumentBuilderFactory(): DocumentBuilderFactory =
+        harden(DocumentBuilderFactory.newInstance())
 
     private fun unescapeHtml(text: String): String = text
         .replace("&lt;", "<")

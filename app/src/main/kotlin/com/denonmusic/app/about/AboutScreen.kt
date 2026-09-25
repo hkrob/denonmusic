@@ -53,6 +53,11 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.10" to listOf(
+        "Fixed the update check itself failing with a parser error, which is why 0.1.8 and 0.1.9 " +
+            "could not update themselves and had to be installed by hand. The hardening added in " +
+            "0.1.8 called an XML setting that Android rejects outright rather than ignoring.",
+    ),
     "0.1.9" to listOf(
         "Fixed \"Play all\" and \"Add all to queue\" failing with \"Out of range\" on multi-disc " +
             "albums and on folders holding an extras subfolder. The receiver accepts a queue add " +
