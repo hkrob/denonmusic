@@ -164,6 +164,15 @@ class HeosConnection(
         }
     }
 
+    /**
+     * Drops the socket and the reader job, leaving the instance reusable by [connect].
+     *
+     * **This is not the one you want when you are finished with a connection** - it deliberately
+     * leaves [scope] alive so the instance can reconnect, which means a caller that discards the
+     * object after calling this leaks the scope. Being the [AutoCloseable] override makes it the
+     * one every reflex reaches for; that is exactly how the sessions leaked two connections per
+     * reconnect up to 0.1.8. Use [shutdown] unless you are about to call [connect] again.
+     */
     override fun close() {
         readerJob?.cancel()
         readerJob = null
@@ -173,7 +182,11 @@ class HeosConnection(
         socket = null
     }
 
-    /** Releases the internal scope. The instance cannot be reconnected afterwards. */
+    /**
+     * [close], and then releases the internal scope. The instance cannot be reconnected afterwards.
+     *
+     * What anything owning a connection's whole lifetime should call.
+     */
     fun shutdown() {
         close()
         scope.cancel()

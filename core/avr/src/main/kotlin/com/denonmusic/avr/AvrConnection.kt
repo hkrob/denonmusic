@@ -211,6 +211,15 @@ class AvrConnection(
         }
     }
 
+    /**
+     * Drops the socket and the reader job, leaving the instance reusable by [connect].
+     *
+     * **Not the one to call when you are finished with a connection**: it deliberately leaves
+     * [scope] alive so the instance can reconnect, so a caller that discards the object afterwards
+     * leaks the scope. Being the [AutoCloseable] override makes it the one every reflex reaches
+     * for, which is how the sessions leaked connections per reconnect up to 0.1.8. Use [shutdown]
+     * unless a [connect] is coming.
+     */
     override fun close() {
         readerJob?.cancel()
         readerJob = null
@@ -220,6 +229,11 @@ class AvrConnection(
         socket = null
     }
 
+    /**
+     * [close], and then releases the internal scope. The instance cannot be reconnected afterwards.
+     *
+     * What anything owning a connection's whole lifetime should call.
+     */
     fun shutdown() {
         close()
         scope.cancel()
