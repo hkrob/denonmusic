@@ -32,15 +32,15 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
           cache: gradle
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
           # Google removed the legacy standalone `tools` package (default: "tools platform-tools")
           # from its SDK repository around 2026-09-15; requesting it now hard-fails sdkmanager
@@ -71,17 +71,39 @@ jobs:
             exit 1
           fi
 
+      # There are two ways to publish: this workflow, and publish-release.ps1 locally. The local one
+      # creates the release through the API, which creates its tag, which fires this workflow's own
+      # push trigger - so a local publish always started a run that found the finished release and
+      # failed on it. Every local publish since v0.1.8 left a red run behind for no reason.
+      #
+      # A tag-triggered run that finds the release already built and carrying its APK has simply
+      # arrived second, and says so. A manual run still fails, because there the version really was
+      # not bumped and somebody meant to publish.
       - name: Refuse to republish an existing release
+        id: existing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
-          if gh release view "${{ steps.version.outputs.tag }}" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "::error::Release ${{ steps.version.outputs.tag }} already exists — bump the version first."
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "::error::Release $TAG already exists — bump the version first."
             exit 1
           fi
+          assets=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          if ! printf '%s\n' "$assets" | grep -qx "DenonMusic-$TAG.apk"; then
+            echo "::error::Release $TAG exists but has no DenonMusic-$TAG.apk — publish it by hand or delete the release."
+            exit 1
+          fi
+          echo "::notice::$TAG was already published with its APK, most likely by publish-release.ps1. Nothing to do."
+          echo "published=true" >> "$GITHUB_OUTPUT"
 
       - name: Extract release notes from the About tab changelog
+        if: steps.existing.outputs.published != 'true'
         id: notes
         run: |
           set -euo pipefail
@@ -106,9 +128,11 @@ jobs:
           cat release-notes.md
 
       - name: Unit tests
+        if: steps.existing.outputs.published != 'true'
         run: ./gradlew --no-daemon :app:testDebugUnitTest :core:heos:test :core:avr:test :core:smb:test :core:data:testDebugUnitTest
 
       - name: Materialise the signing key
+        if: steps.existing.outputs.published != 'true'
         env:
           KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
           STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
@@ -131,9 +155,11 @@ jobs:
           } > "$GITHUB_WORKSPACE/keystore.properties"
 
       - name: Build the signed release APK
+        if: steps.existing.outputs.published != 'true'
         run: ./gradlew --no-daemon :app:assembleRelease
 
       - name: Verify the APK carries the expected signature
+        if: steps.existing.outputs.published != 'true'
         run: |
           set -euo pipefail
           APK=app/build/outputs/apk/release/app-release.apk
@@ -155,7 +181,7 @@ jobs:
           cp "$APK" "DenonMusic-${{ steps.version.outputs.tag }}.apk"
 
       - name: Publish
-        if: ${{ inputs.dry_run != true }}
+        if: ${{ inputs.dry_run != true && steps.existing.outputs.published != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -170,7 +196,7 @@ jobs:
             --json tagName,assets --jq '"\(.tagName): \(.assets | map(.name) | join(", "))"'
 
       - name: Dry run summary
-        if: ${{ inputs.dry_run == true }}
+        if: ${{ inputs.dry_run == true && steps.existing.outputs.published != 'true' }}
         run: |
           echo "Dry run — nothing published."
           echo "Would publish ${{ steps.version.outputs.tag }} with DenonMusic-${{ steps.version.outputs.tag }}.apk"
