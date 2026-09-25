@@ -1,5 +1,8 @@
 package com.denonmusic.app
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.MotionEvent
@@ -7,8 +10,10 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.activity.viewModels
 import androidx.compose.material3.Surface
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -36,9 +41,21 @@ class MainActivity : ComponentActivity() {
     private var lastInteractionAtMillis = SystemClock.elapsedRealtime()
     private var isDimmed = false
 
+    /**
+     * From Android 13 a notification needs the user's say-so, and without it the now-playing
+     * controls simply never appear - silently, which is the worst way for a feature to be missing.
+     * Asked for once on first launch; a refusal is final and left alone, since the app works
+     * perfectly well without it and nagging would be worse than the gap.
+     *
+     * Nothing to verify here on the phone this was developed against (Android 9, where the
+     * permission does not exist and the notification just appears).
+     */
+    private val requestNotificationPermission = registerForActivityResult(RequestPermission()) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        askForNotificationPermission()
         setContent {
             WinampTheme {
                 Surface(color = Winamp.Background) {
@@ -47,6 +64,13 @@ class MainActivity : ComponentActivity() {
             }
         }
         observeScreenSettings()
+    }
+
+    private fun askForNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     /** Any touch counts as activity, and immediately un-dims - the settings-driven idle loop below

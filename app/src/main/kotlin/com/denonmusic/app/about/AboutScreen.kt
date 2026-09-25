@@ -53,6 +53,11 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.14" to listOf(
+        "The app now asks permission to show the now-playing notification on Android 13 and " +
+            "later, where it is refused by default - without it the notification and its " +
+            "controls never appeared at all, and said nothing about why.",
+    ),
     "0.1.13" to listOf(
         "The now-playing notification no longer disappears when the app is closed. It keeps " +
             "following the receiver on its own - including changes made from the receiver's own " +

@@ -1,11 +1,13 @@
 package com.denonmusic.app.notification
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
@@ -15,6 +17,7 @@ import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.denonmusic.app.MainActivity
 import com.denonmusic.app.player.PlayerStateTracker
 import com.denonmusic.heos.PlayState
@@ -142,7 +145,16 @@ class NowPlayingService : Service() {
         mediaSession?.publish(snapshot, art)
         val notification = build(snapshot)
         if (started) {
-            NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
+            // startForeground below is allowed without POST_NOTIFICATIONS, but these later updates
+            // are not: from Android 13 the user can refuse the permission, and posting anyway
+            // throws. MainActivity asks for it; if the answer was no, the first notification stays
+            // as it was rather than the service dying over a cosmetic update.
+            val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+            if (allowed) {
+                NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
+            }
         } else {
             startForeground(NOTIFICATION_ID, notification)
             started = true
