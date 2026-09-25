@@ -8,6 +8,11 @@ Answers the questions that cannot be settled from documentation, against your ac
   * how SSINFAISSIG / SSINFAISFSV encode signal type and sample rate
   * which music source your SMB or DLNA share appears under, and whether it queues
 
+For the AVR-X4500H this project was built against, those four are already answered and recorded
+under "Probe findings" in docs/local-setup.md - read that before re-measuring. The probe stays
+useful for a different receiver, and for checking behaviour against the hardware rather than
+against a comment, which is how more than one wrong assumption in this codebase was caught.
+
 Standard library only. Python 3.8+.
 
 Subcommands
