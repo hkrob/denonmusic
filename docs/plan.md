@@ -275,7 +275,7 @@ notification.
 - CI runs both on every push.
 
 **Manual, against the real unit**
-1. `python tools/probe.py <avr-ip>` — sweep, change sound mode, sweep, diff. Confirm the OUTPUT-map
+1. `python tools/probe.py sweep <avr-ip>` — sweep, change sound mode, sweep, diff. Confirm the OUTPUT-map
    field, the HEOS input mnemonic, and `SSINF` encodings.
 2. Browse an album → "Replace queue and play". **Track transition must be gapless** — the acceptance
    test for the whole architecture.

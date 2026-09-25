@@ -74,7 +74,7 @@ The receiver has to be able to see the files. Two options, and the app auto-dete
 Check what the receiver can currently see:
 
 ```sh
-./tools/probe.py <avr-ip> sources
+./tools/probe.py sources <avr-ip>
 ```
 
 Rows marked queueable support `browse/add_to_queue`, and therefore gapless playback and DSD.
@@ -100,18 +100,18 @@ mnemonic selects the HEOS input, which endpoint backs the speaker OUTPUT map, an
 commands encode their values. `tools/probe.py` answers them. Standard library only.
 
 ```sh
-./tools/probe.py <avr-ip> tap                 # watch both control ports live
-./tools/probe.py <avr-ip> sources             # list music sources, flag queueable ones
-./tools/probe.py <avr-ip> avr 'MS?' 'CV?'     # send raw AVR commands
-./tools/probe.py <avr-ip> heos browse/get_music_sources
+./tools/probe.py tap <avr-ip>                 # watch both control ports live
+./tools/probe.py sources <avr-ip>             # list music sources, flag queueable ones
+./tools/probe.py avr <avr-ip> 'MS?' 'CV?'     # send raw AVR commands
+./tools/probe.py heos <avr-ip> browse/get_music_sources
 ```
 
 Finding the speaker OUTPUT map is a three-step measurement:
 
 ```sh
-./tools/probe.py <avr-ip> sweep -o before.json
+./tools/probe.py sweep <avr-ip> -o before.json
 # change the sound mode on the receiver, e.g. Stereo -> Multi Ch Stereo
-./tools/probe.py <avr-ip> sweep -o after.json
+./tools/probe.py sweep <avr-ip> -o after.json
 ./tools/probe.py diff before.json after.json
 ```
 

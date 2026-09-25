@@ -48,7 +48,7 @@ modules Android-free - that gating is load-bearing for CI.
   which is not remotely what went wrong. `HeosClient.addToQueue` retries for this; don't add a
   second queueing path that doesn't.
 - **Check protocol behaviour against the receiver instead of the comments.** There is direct LAN
-  access to the real unit at `10.1.10.50`, and `tools/probe.py <ip> tap|sources|avr|heos` is the
+  access to the real unit at `10.1.10.50`, and `tools/probe.py <subcommand> <ip>` is the
   tool for it (standard library only). Several comments in this codebase were written from the spec
   and turned out wrong; at least one is still unverified (see the end of `docs/local-setup.md`).
 - **Home Assistant's `denonavr` integration competes for the control ports.** If telnet:23 or

@@ -28,9 +28,9 @@ Subcommands
 
 Typical session
 ---------------
-  ./probe.py 192.168.1.50 sweep -o a.json
+  ./probe.py sweep 192.168.1.50 -o a.json
   # change the sound mode on the receiver, e.g. Stereo -> Multi Ch Stereo
-  ./probe.py 192.168.1.50 sweep -o b.json
+  ./probe.py sweep 192.168.1.50 -o b.json
   ./probe.py diff a.json b.json
 """
 

@@ -100,19 +100,19 @@ written.
 
 ```sh
 # 1. Is the share visible to the receiver, and can it be queued?
-./tools/probe.py <avr-ip> sources
+./tools/probe.py sources <avr-ip>
 
 # 2. Which endpoint backs the speaker OUTPUT map?
-./tools/probe.py <avr-ip> sweep -o /tmp/before.json
+./tools/probe.py sweep <avr-ip> -o /tmp/before.json
 #    ...now change the sound mode on the receiver: Stereo -> Multi Ch Stereo...
-./tools/probe.py <avr-ip> sweep -o /tmp/after.json
+./tools/probe.py sweep <avr-ip> -o /tmp/after.json
 ./tools/probe.py diff /tmp/before.json /tmp/after.json
 
 # 3. Which mnemonic selects the HEOS input, and how does signal info encode?
-./tools/probe.py <avr-ip> avr 'SI?' 'MS?' 'SSINFAISSIG ?' 'SSINFAISFSV ?'
+./tools/probe.py avr <avr-ip> 'SI?' 'MS?' 'SSINFAISSIG ?' 'SSINFAISFSV ?'
 
 # 4. What does the receiver emit unprompted? Operate it with the remote while this runs.
-./tools/probe.py <avr-ip> tap
+./tools/probe.py tap <avr-ip>
 ```
 
 What to do with the answers:
