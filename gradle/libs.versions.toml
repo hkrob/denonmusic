@@ -17,6 +17,7 @@ coreKtx = "1.15.0"
 jcifsNg = "2.1.10"
 work = "2.10.0"
 media = "1.7.0"
+securityCrypto = "1.1.0-alpha06"
 ktlintPlugin = "12.1.2"
 ktlint = "1.4.1"
 robolectric = "4.15.1"
@@ -62,6 +63,9 @@ androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version
 
 # MediaSessionCompat + NotificationCompat.MediaStyle: the notification-shade media controls.
 androidx-media = { module = "androidx.media:media", version.ref = "media" }
+
+# EncryptedSharedPreferences for the two stored passwords - see core/data SecretStore.
+androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
 
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 robolectric-junit5 = { module = "tech.apter.junit5.jupiter:robolectric-extension", version.ref = "robolectricJunit5" }

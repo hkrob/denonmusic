@@ -140,13 +140,20 @@ class AvrConnection(
      * Sends [command] and collects every line starting with any of [responsePrefixes], for a fixed
      * [burstWindowMillis] measured from the *first* matching line - not "until it goes quiet."
      *
-     * A real AVR-X4500H probed for this project turned out to free-run a status telemetry block
-     * (`SSINF*`/`CV*`/`MVMAX`/`DCAUTO`) roughly once a second on its own, independent of anything this
-     * client asks for - so a quiet-period read can starve forever waiting for a silence that never
-     * comes. A fixed window anchored to the first hit sidesteps that: it needs only that this
-     * command's own answer (e.g. `SSINFAISSIG ?`'s numeric code line plus the receiver's own
-     * human-readable `SYSDA` label line) arrives close together, not that nothing else ever arrives
-     * again.
+     * A real AVR-X4500H emits a status telemetry block of its own - `SSINFAISSIG`, `SSINFAISFSV`,
+     * `CVFL`…`CVEND`, `MVMAX`, `DCAUTO`, about nine lines inside 600ms - that nothing here asked
+     * for. A quiet-period read can therefore wait for a silence that does not come, while a fixed
+     * window anchored to the first hit needs only that this command's own answer (e.g.
+     * `SSINFAISSIG ?`'s numeric code line plus the receiver's own human-readable `SYSDA` label
+     * line) arrives close together.
+     *
+     * Measured 2026-09-25, correcting an earlier note here that called it "roughly once a second,
+     * independent of anything this client asks for". Both halves were wrong. The block repeats
+     * about **every 15 seconds**, and it is not reliably unprompted: three separate 30-second taps
+     * that sent nothing at all - in standby and while playing - saw zero lines, while a connection
+     * that had sent one command saw a block every ~15s thereafter. Treat it as "the receiver talks
+     * back on its own once it has been spoken to", which is enough to justify this design and is
+     * all that was actually observed.
      */
     suspend fun queryMatchingAny(
         command: String,

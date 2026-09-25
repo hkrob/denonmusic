@@ -162,7 +162,7 @@ class AvrClientTest {
         client.setVolumeDb(-74.5)
 
         // 5.5 on the wire is "055", not "55" - the latter reads back as 55, i.e. -25dB.
-        assertEquals(listOf("MV055"), server.received)
+        awaitReceived(listOf("MV055"))
     }
 
     @Test
@@ -171,7 +171,7 @@ class AvrClientTest {
 
         client.setVolumeDb(-75.0)
 
-        assertEquals(listOf("MV05"), server.received)
+        awaitReceived(listOf("MV05"))
     }
 
     @Test

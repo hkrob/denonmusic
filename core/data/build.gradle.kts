@@ -28,6 +28,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.androidx.security.crypto)
     implementation(project(":core:heos"))
     implementation(project(":core:smb"))
 

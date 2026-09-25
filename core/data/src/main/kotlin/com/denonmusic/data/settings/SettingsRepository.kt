@@ -8,7 +8,8 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 
 data class AppSettings(
     /** Set manually, or from a pick in Settings' SSDP LAN discovery (see `:core:avr`'s SsdpDiscovery). */
@@ -53,9 +54,17 @@ data class AppSettings(
  * Thin wrapper over one [DataStore]<Preferences>. Everything here is a handful of scalars, so one
  * preferences file is simpler than Room for it and matches what `:core:data` documents in the plan.
  */
-class SettingsRepository(private val dataStore: DataStore<Preferences>) {
+class SettingsRepository(
+    private val dataStore: DataStore<Preferences>,
+    private val secrets: SecretStore = InMemorySecretStore(),
+) {
 
-    val settings: Flow<AppSettings> = dataStore.data.map { prefs ->
+    /**
+     * Combined with [SecretStore.changes] rather than read from DataStore alone: the two passwords
+     * live in encrypted storage, which is not a flow, so without this a password change would
+     * never reach anything already collecting settings.
+     */
+    val settings: Flow<AppSettings> = combine(dataStore.data, secrets.changes) { prefs, _ ->
         AppSettings(
             avrHost = prefs[KEY_AVR_HOST],
             selectedSourceSid = prefs[KEY_SELECTED_SID],
@@ -65,14 +74,14 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
             smbHost = prefs[KEY_SMB_HOST],
             smbShare = prefs[KEY_SMB_SHARE],
             smbUsername = prefs[KEY_SMB_USERNAME],
-            smbPassword = prefs[KEY_SMB_PASSWORD],
+            smbPassword = secrets.read(SecretStore.SMB_PASSWORD),
             smbBrowsePath = prefs[KEY_SMB_BROWSE_PATH],
             keepScreenOn = prefs[KEY_KEEP_SCREEN_ON] ?: false,
             autoDimEnabled = prefs[KEY_AUTO_DIM_ENABLED] ?: false,
             autoDimAfterSeconds = prefs[KEY_AUTO_DIM_AFTER_SECONDS] ?: AppSettings.DEFAULT_AUTO_DIM_AFTER_SECONDS,
             autoDimBrightnessPercent = prefs[KEY_AUTO_DIM_BRIGHTNESS_PERCENT] ?: AppSettings.DEFAULT_AUTO_DIM_BRIGHTNESS_PERCENT,
             lanControlEnabled = prefs[KEY_LAN_CONTROL_ENABLED] ?: false,
-            lanControlPassword = prefs[KEY_LAN_CONTROL_PASSWORD],
+            lanControlPassword = secrets.read(SecretStore.LAN_CONTROL_PASSWORD),
         )
     }
 
@@ -97,11 +106,12 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     }
 
     suspend fun setSmbCredentials(host: String, share: String, username: String, password: String) {
+        secrets.write(SecretStore.SMB_PASSWORD, password)
         dataStore.edit {
             it[KEY_SMB_HOST] = host
             it[KEY_SMB_SHARE] = share
             it[KEY_SMB_USERNAME] = username
-            it[KEY_SMB_PASSWORD] = password
+            it.remove(KEY_SMB_PASSWORD)
         }
     }
 
@@ -122,9 +132,30 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     }
 
     suspend fun setLanControl(enabled: Boolean, password: String) {
+        secrets.write(SecretStore.LAN_CONTROL_PASSWORD, password)
         dataStore.edit {
             it[KEY_LAN_CONTROL_ENABLED] = enabled
-            it[KEY_LAN_CONTROL_PASSWORD] = password
+            it.remove(KEY_LAN_CONTROL_PASSWORD)
+        }
+    }
+
+    /**
+     * Moves any password still sitting in plain DataStore into [secrets], once.
+     *
+     * Everything written before this existed is in the clear, and simply reading from the new place
+     * would silently log the user out of their own share. Call it before anything reads settings;
+     * it is cheap and does nothing on a device that has already been through it.
+     */
+    suspend fun migrateSecretsOutOfPlainStorage() {
+        val prefs = dataStore.data.first()
+        val legacySmb = prefs[KEY_SMB_PASSWORD]
+        val legacyLan = prefs[KEY_LAN_CONTROL_PASSWORD]
+        if (legacySmb == null && legacyLan == null) return
+        legacySmb?.let { secrets.write(SecretStore.SMB_PASSWORD, it) }
+        legacyLan?.let { secrets.write(SecretStore.LAN_CONTROL_PASSWORD, it) }
+        dataStore.edit {
+            it.remove(KEY_SMB_PASSWORD)
+            it.remove(KEY_LAN_CONTROL_PASSWORD)
         }
     }
 

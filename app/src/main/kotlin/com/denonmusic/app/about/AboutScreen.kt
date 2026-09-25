@@ -53,6 +53,11 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.16" to listOf(
+        "The SMB share password and the LAN control token are now encrypted, with a key held " +
+            "in the phone's own keystore, instead of sitting in plain app storage. Existing " +
+            "passwords are moved across on first launch - nothing needs re-entering.",
+    ),
     "0.1.15" to listOf(
         "Fixed the now-playing notification never appearing on Android 10 and later. It was " +
             "started the wrong way for modern Android and went foreground without saying what " +
@@ -113,7 +118,7 @@ private val CHANGELOG = listOf(
             "through HEOS: a half-dB step below -70 dB set a far louder level than asked for, and " +
             "reading the volume back could come out empty.",
         "Fixed the release notes shown here and on GitHub being chopped into fragments " +
-            "mid-sentence, as 0.1.6 and 0.1.7 above still are - the generator broke each bullet " +
+            "mid-sentence - the generator broke each bullet " +
             "apart at every line it was wrapped across.",
     ),
     "0.1.7" to listOf(

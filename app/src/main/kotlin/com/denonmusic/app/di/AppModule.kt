@@ -13,6 +13,7 @@ import com.denonmusic.data.AppDatabase
 import com.denonmusic.data.browse.BrowseCacheDao
 import com.denonmusic.data.browse.BrowseStackDao
 import com.denonmusic.data.media.MediaInfoCacheDao
+import com.denonmusic.data.settings.EncryptedSecretStore
 import com.denonmusic.data.settings.SettingsRepository
 import dagger.Module
 import dagger.Provides
@@ -34,8 +35,10 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideSettingsRepository(dataStore: DataStore<Preferences>): SettingsRepository =
-        SettingsRepository(dataStore)
+    fun provideSettingsRepository(
+        dataStore: DataStore<Preferences>,
+        @ApplicationContext context: Context,
+    ): SettingsRepository = SettingsRepository(dataStore, EncryptedSecretStore(context))
 
     @Provides
     @Singleton

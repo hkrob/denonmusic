@@ -155,9 +155,18 @@ def heos_command(host: str, command: str, timeout: float = 10.0) -> Optional[dic
                     frame = json.loads(raw.decode("utf-8"))
                 except (ValueError, UnicodeDecodeError):
                     continue
-                name = frame.get("heos", {}).get("command", "").strip()
+                head = frame.get("heos", {})
+                name = head.get("command", "").strip()
                 # Skip unsolicited events that happen to arrive while we wait.
                 if name.startswith("event/"):
+                    continue
+                # Browsing a slow source (a DLNA server, say) answers twice: an immediate
+                # "command under process" acknowledgment carrying no payload, then the real
+                # result a moment later. Returning the ack makes every such browse look empty.
+                # The app itself was fixed for this long ago - see
+                # docs/heos-dlna-plex-jellyfin-conflict.md - but the probe was not, and it cost a
+                # session chasing a library that appeared to have nothing in it.
+                if "command under process" in str(head.get("message", "")):
                     continue
                 return frame
     return None
