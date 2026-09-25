@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.denonmusic.app.lancontrol.LanControlManager
 import com.denonmusic.app.lancontrol.LanControlStatus
 import com.denonmusic.app.media.MediaInfoRepository
+import com.denonmusic.app.notification.NowPlayingShade
+import com.denonmusic.app.notification.ShadeStatus
 import com.denonmusic.avr.DiscoveredAvr
 import com.denonmusic.avr.SsdpDiscovery
 import com.denonmusic.data.settings.AppSettings
@@ -32,6 +34,7 @@ class SettingsViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val mediaInfoRepository: MediaInfoRepository,
     private val lanControlManager: LanControlManager,
+    nowPlayingShade: NowPlayingShade,
 ) : ViewModel() {
 
     // Exposed as `settingsState`, not `settings`, only because the injected repository already owns
@@ -47,6 +50,9 @@ class SettingsViewModel @Inject constructor(
     val smbConnectionTestResult: StateFlow<String?> = _smbConnectionTestResult.asStateFlow()
 
     val lanControlStatus: StateFlow<LanControlStatus> = lanControlManager.status
+
+    /** So a phone that will not show the notification can say why - see [ShadeStatus]. */
+    val notificationStatus: StateFlow<ShadeStatus> = nowPlayingShade.status
 
     private val _avrDiscovery = MutableStateFlow<AvrDiscoveryUiState>(AvrDiscoveryUiState.Idle)
     val avrDiscovery: StateFlow<AvrDiscoveryUiState> = _avrDiscovery.asStateFlow()

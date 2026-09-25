@@ -53,6 +53,11 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.17" to listOf(
+        "Settings now reports what the now-playing notification is doing, and why it is not " +
+            "showing when it is not - the failures that stop it are all invisible otherwise, " +
+            "which is why it has been hard to fix on phones newer than the one it was built on.",
+    ),
     "0.1.16" to listOf(
         "The SMB share password and the LAN control token are now encrypted, with a key held " +
             "in the phone's own keystore, instead of sitting in plain app storage. Existing " +

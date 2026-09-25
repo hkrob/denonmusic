@@ -69,11 +69,14 @@ class NowPlayingService : Service() {
         fun nowPlayingNotifier(): NowPlayingNotifier
 
         fun playerStateTracker(): PlayerStateTracker
+
+        fun nowPlayingShade(): NowPlayingShade
     }
 
     private val graph: Graph by lazy { EntryPointAccessors.fromApplication(applicationContext, Graph::class.java) }
     private val notifier: NowPlayingNotifier by lazy { graph.nowPlayingNotifier() }
     private val tracker: PlayerStateTracker by lazy { graph.playerStateTracker() }
+    private val shade: NowPlayingShade by lazy { graph.nowPlayingShade() }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var mediaSession: MediaSessionCompat? = null
@@ -197,13 +200,19 @@ class NowPlayingService : Service() {
         try {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
             started = true
+            shade.report(ShadeStatus.Running)
         } catch (e: Exception) {
             val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
                 ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
                 PackageManager.PERMISSION_GRANTED
             if (allowed) {
-                NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
-                started = true
+                runCatching {
+                    NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
+                    started = true
+                    shade.report(ShadeStatus.Degraded(e.describe()))
+                }.onFailure { shade.report(ShadeStatus.Blocked(it.describe())) }
+            } else {
+                shade.report(ShadeStatus.Blocked("notifications not permitted, and " + e.describe()))
             }
             Log.w(TAG, "Could not start in the foreground; showing a plain notification instead", e)
         }

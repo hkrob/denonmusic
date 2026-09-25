@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.denonmusic.app.lancontrol.LanControlStatus
+import com.denonmusic.app.notification.ShadeStatus
 import com.denonmusic.app.ui.Winamp
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -150,6 +151,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 Text("SAVE LAN CONTROL SETTINGS", style = Winamp.labelStyle, color = Winamp.Amber)
             }
             LanControlStatusRow(viewModel)
+
+            SectionLabel("NOTIFICATION", modifier = Modifier.padding(top = 24.dp))
+            NotificationStatusRow(viewModel)
         }
     }
 }
@@ -194,6 +198,23 @@ private fun AvrDiscoverySection(viewModel: SettingsViewModel) {
             is AvrDiscoveryUiState.Idle -> {}
         }
     }
+}
+
+@Composable
+private fun NotificationStatusRow(viewModel: SettingsViewModel) {
+    val status by viewModel.notificationStatus.collectAsState()
+    val text = when (val s = status) {
+        is ShadeStatus.Idle -> "IDLE - nothing playing, so nothing to show"
+        is ShadeStatus.Running -> "RUNNING - shown as a foreground service"
+        is ShadeStatus.Degraded -> "DEGRADED - shown, but the system refused the foreground service (${s.reason})"
+        is ShadeStatus.Blocked -> "NOT SHOWN - ${s.reason}"
+    }
+    val color = when (status) {
+        is ShadeStatus.Running -> Winamp.Green
+        is ShadeStatus.Idle -> Winamp.Green
+        else -> Winamp.Amber
+    }
+    Text(text, style = Winamp.smallStyle, color = color)
 }
 
 @Composable
