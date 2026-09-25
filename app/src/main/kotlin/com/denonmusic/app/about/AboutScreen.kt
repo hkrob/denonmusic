@@ -53,6 +53,14 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.18" to listOf(
+        "The now-playing controls now show a real progress bar with elapsed and total time. " +
+            "They report playback speed correctly too, which they did not before - it said " +
+            "\"playing\" and \"stopped clock\" at the same time.",
+        "Note on where to find them: Android shows these in the media panel, not the " +
+            "notification list. On a Samsung phone that means swiping down twice, to the " +
+            "bottom of Quick Settings.",
+    ),
     "0.1.17" to listOf(
         "Settings now reports what the now-playing notification is doing, and why it is not " +
             "showing when it is not - the failures that stop it are all invisible otherwise, " +

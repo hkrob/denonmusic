@@ -268,6 +268,7 @@ class NowPlayingService : Service() {
                 .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, snapshot.artist)
                 .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, snapshot.album)
                 .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, artwork)
+                .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, snapshot.durationMillis)
                 .build(),
         )
         setPlaybackState(
@@ -277,12 +278,20 @@ class NowPlayingService : Service() {
                         PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
                         PlaybackStateCompat.ACTION_STOP,
                 )
-                // The receiver owns the clock; this app never knows the true position to the
-                // millisecond, so the shade is told not to run a progress animation of its own.
+                // Speed must be 1 while playing. It was 0 here - meaning "playing, but the
+                // clock is stopped" - on the theory that the receiver owns the clock and this app
+                // should not animate a position it cannot drive precisely. Stock Android tolerated
+                // the contradiction; Samsung's One UI does not, and dropped the session from its
+                // media panel entirely, which is where a MediaStyle notification is shown. The
+                // result was no notification at all on a Galaxy running Android 16, while the same
+                // build was fine on an Android 16 emulator.
+                //
+                // The position comes from the receiver's own progress events, so the shade now has
+                // something real to extrapolate from between them.
                 .setState(
                     if (snapshot.isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
-                    PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
-                    0f,
+                    snapshot.positionMillis,
+                    if (snapshot.isPlaying) 1f else 0f,
                 )
                 .build(),
         )

@@ -24,6 +24,8 @@ data class NowPlayingSnapshot(
     val artUrl: String? = null,
     val isPlaying: Boolean = false,
     val isBridgeMode: Boolean = false,
+    val positionMillis: Long = 0,
+    val durationMillis: Long = 0,
 ) {
     /** Nothing to show: no track, from either the real HEOS queue or the bridge. */
     val isEmpty: Boolean get() = title.isNullOrBlank()
@@ -64,6 +66,8 @@ class NowPlayingNotifier @Inject constructor(
                 artUrl = state.nowPlaying?.imageUrl,
                 isPlaying = state.playState == PlayState.Play,
                 isBridgeMode = true,
+                positionMillis = state.progress.positionMillis,
+                durationMillis = state.progress.durationMillis,
             )
         } else {
             NowPlayingSnapshot(
@@ -74,6 +78,8 @@ class NowPlayingNotifier @Inject constructor(
                 artUrl = state.nowPlaying?.imageUrl,
                 isPlaying = state.playState == PlayState.Play,
                 isBridgeMode = false,
+                positionMillis = state.progress.positionMillis,
+                durationMillis = state.progress.durationMillis,
             )
         }
         _snapshot.update { next }
