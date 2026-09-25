@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -77,7 +78,7 @@ class QueueTargetResolverTest {
         )
         connection.connect()
 
-        val targets = QueueTargetResolver.collect(client, sid = "1024", cid = "album")
+        val targets = QueueTargetResolver.collect(client, sid = "1024", cid = "album").complete()
 
         assertEquals(listOf("m1", "m2"), targets.map { it.mid })
     }
@@ -95,7 +96,7 @@ class QueueTargetResolverTest {
         )
         connection.connect()
 
-        val targets = QueueTargetResolver.collect(client, sid = "1024", cid = "album")
+        val targets = QueueTargetResolver.collect(client, sid = "1024", cid = "album").complete()
 
         // Each disc resolves to one whole-container add, not to its individual tracks.
         assertEquals(listOf("cd1", "cd2"), targets.map { it.cid })
@@ -107,7 +108,7 @@ class QueueTargetResolverTest {
         serveTree(mapOf("album" to Level(listOf(track("One", "m1"), track("Two", "m2")), playableContainer = true)))
         connection.connect()
 
-        val targets = QueueTargetResolver.collect(client, sid = "1024", cid = "album")
+        val targets = QueueTargetResolver.collect(client, sid = "1024", cid = "album").complete()
 
         assertEquals(listOf(QueueTarget("1024", "album", null)), targets)
     }
@@ -117,7 +118,7 @@ class QueueTargetResolverTest {
         serveTree(mapOf("album" to Level(listOf(track("One", "m1"), track("Two", "m2")))))
         connection.connect()
 
-        val targets = QueueTargetResolver.collect(client, sid = "1024", cid = "album")
+        val targets = QueueTargetResolver.collect(client, sid = "1024", cid = "album").complete()
 
         assertEquals(listOf("m1", "m2"), targets.map { it.mid })
     }
@@ -135,7 +136,7 @@ class QueueTargetResolverTest {
         }
         connection.connect()
 
-        val targets = QueueTargetResolver.collect(client, sid = "1024", cid = "top", maxDepth = 3)
+        val targets = QueueTargetResolver.collect(client, sid = "1024", cid = "top", maxDepth = 3).complete()
 
         assertEquals(emptyList(), targets)
         // depth 0 (top) plus one browse per level down to the cutoff - bounded, not runaway.
@@ -155,11 +156,32 @@ class QueueTargetResolverTest {
         serveTree(tree)
         connection.connect()
 
-        val targets = QueueTargetResolver.collect(client, sid = "1024", cid = "album", maxTargets = 12)
+        val collected = QueueTargetResolver.collect(client, sid = "1024", cid = "album", maxTargets = 12)
 
-        // Overshoot is expected - the walk finishes the container that crosses the line rather than
-        // truncating mid-folder - but it must not go on to gather all 50.
-        assertTrue(targets.size in 13..20, "expected to stop shortly after 12, got ${targets.size}")
+        // Refusing is the whole answer: a partial list would be queued as if it were the folder.
+        val tooMany = assertIs<QueueCollection.TooMany>(collected, "expected a refusal, got $collected")
+        assertEquals(12, tooMany.limit)
+        assertTrue(tooMany.foundSoFar > 12, "foundSoFar should be past the limit, got ${tooMany.foundSoFar}")
+        // And it must give up there rather than walking all ten discs to find out.
+        val browses = server.received.count { it.startsWith("heos://browse/browse") }
+        assertTrue(browses <= 6, "expected the walk to stop early, got $browses browses")
+    }
+
+    @Test
+    fun `refuses a level with more subfolders than the budget without walking them`() = runBlocking {
+        // 40 folders against a budget of 10: the count alone settles it, so paying a round trip per
+        // folder to discover the same thing is what made "too many" take minutes on a real library.
+        serveTree(
+            mapOf("artist" to Level((1..40).map { folder("Album $it", "a$it") })) +
+                (1..40).associate { "a$it" to Level(listOf(track("T", "t$it"))) },
+        )
+        connection.connect()
+
+        val collected = QueueTargetResolver.collect(client, sid = "1024", cid = "artist", maxTargets = 10)
+
+        assertIs<QueueCollection.TooMany>(collected, "expected a refusal, got $collected")
+        val browses = server.received.count { it.startsWith("heos://browse/browse") }
+        assertTrue(browses <= 2, "expected to refuse from the listing alone, got $browses browses")
     }
 
     @Test
@@ -174,7 +196,7 @@ class QueueTargetResolverTest {
         connection.connect()
 
         val seen = mutableListOf<Int>()
-        val targets = QueueTargetResolver.collect(client, sid = "1024", cid = "album") { seen += it }
+        val targets = QueueTargetResolver.collect(client, sid = "1024", cid = "album", onProgress = { seen += it }).complete()
 
         assertEquals(3, targets.size)
         assertTrue(seen.isNotEmpty(), "onProgress was never called")
@@ -195,9 +217,13 @@ class QueueTargetResolverTest {
         connection.connect()
 
         val seen = mutableListOf<Int>()
-        QueueTargetResolver.collect(client, sid = "1024", cid = "album") { seen += it }
+        QueueTargetResolver.collect(client, sid = "1024", cid = "album", onProgress = { seen += it })
 
         assertEquals(seen.sorted(), seen, "progress went backwards: $seen")
         assertEquals(4, seen.last())
     }
+
+    /** Unwraps a walk that was expected to finish, so a refusal fails the test by name. */
+    private fun QueueCollection.complete(): List<QueueTarget> =
+        assertIs<QueueCollection.Complete>(this, "expected a complete walk, got $this").targets
 }

@@ -25,3 +25,10 @@ captures/
 
 # Probe output: sweeps capture your receiver's configuration and network details.
 tools/sweeps/
+
+# Python bytecode from running tools/probe.py
+__pycache__/
+*.pyc
+
+# Local convenience launchers - personal to one machine.
+resume.cmd

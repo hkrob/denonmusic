@@ -181,6 +181,55 @@ class HeosClientTest {
     }
 
     @Test
+    fun `add to queue retries the eid 9 the receiver returns while it is still ingesting`() = runBlocking {
+        // Measured on a real AVR-X4500H: add_to_queue returns success in ~30ms but the receiver
+        // keeps filling the queue for ~450ms after, and a second add inside that window comes back
+        // "eid=9 Out of range" as though the parameters were bad. Back to back failed every time;
+        // a 250ms gap never did.
+        var attempts = 0
+        server.on("browse/add_to_queue") { line ->
+            attempts++
+            val sequence = FakeHeosServer.sequenceArgOf(line)
+            if (attempts == 1) {
+                listOf(
+                    """{"heos":{"command":"browse/add_to_queue","result":"fail",""" +
+                        """"message":"eid=9&text=Out of range&${HeosProtocol.SEQUENCE}=$sequence"}}""",
+                )
+            } else {
+                listOf(
+                    """{"heos":{"command":"browse/add_to_queue","result":"success",""" +
+                        """"message":"${HeosProtocol.SEQUENCE}=$sequence"}}""",
+                )
+            }
+        }
+        connection.connect()
+
+        client.addToQueue(pid = "1", sid = "1024", cid = "cd2", criteria = AddCriteria.AddToEnd)
+
+        assertEquals(2, attempts, "expected the rejected add to be retried")
+    }
+
+    @Test
+    fun `add to queue gives up on an error that is not the receiver being busy`() = runBlocking {
+        var attempts = 0
+        server.on("browse/add_to_queue") { line ->
+            attempts++
+            listOf(
+                """{"heos":{"command":"browse/add_to_queue","result":"fail",""" +
+                    """"message":"eid=2&text=Invalid ID&${HeosProtocol.SEQUENCE}=${FakeHeosServer.sequenceArgOf(line)}"}}""",
+            )
+        }
+        connection.connect()
+
+        val thrown = assertFailsWith<HeosCommandException> {
+            client.addToQueue(pid = "1", sid = "1024", cid = "nope", criteria = AddCriteria.AddToEnd)
+        }
+
+        assertEquals(2, thrown.error.errorId)
+        assertEquals(1, attempts, "a bad parameter is not worth retrying")
+    }
+
+    @Test
     fun `play stream puts the url last even when given first`() = runBlocking {
         server.onSuccess("browse/play_stream")
         connection.connect()

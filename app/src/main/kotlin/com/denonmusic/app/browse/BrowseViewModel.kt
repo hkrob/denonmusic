@@ -11,6 +11,7 @@ import com.denonmusic.data.browse.BrowseStackEntity
 import com.denonmusic.data.settings.SettingsRepository
 import com.denonmusic.heos.AddCriteria
 import com.denonmusic.heos.BrowseItem
+import com.denonmusic.heos.QueueCollection
 import com.denonmusic.heos.QueueTargetResolver
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -222,20 +223,21 @@ class BrowseViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(message = "No HEOS player found")
                 return@launch
             }
-            val targets = runCatching { QueueTargetResolver.collect(client, current.sid, current.cid) }
+            val collected = runCatching { QueueTargetResolver.collect(client, current.sid, current.cid) }
                 .getOrElse { e ->
                     _uiState.value = _uiState.value.copy(message = e.message ?: "Couldn't gather tracks")
                     return@launch
                 }
-            if (targets.isEmpty()) {
-                _uiState.value = _uiState.value.copy(message = "Nothing playable found")
-                return@launch
-            }
-            if (targets.size > QueueTargetResolver.DEFAULT_MAX_QUEUE_TARGETS) {
+            if (collected is QueueCollection.TooMany) {
                 _uiState.value = _uiState.value.copy(
                     message = "Too many items to queue at once " +
-                        "(limit ${QueueTargetResolver.DEFAULT_MAX_QUEUE_TARGETS}) - open a smaller folder",
+                        "(limit ${collected.limit}) - open a smaller folder",
                 )
+                return@launch
+            }
+            val targets = (collected as QueueCollection.Complete).targets
+            if (targets.isEmpty()) {
+                _uiState.value = _uiState.value.copy(message = "Nothing playable found")
                 return@launch
             }
             runCatching { playbackStarter.addAll(client, playerId, targets, action.criteria) }

@@ -1,5 +1,6 @@
 package com.denonmusic.heos
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
@@ -147,12 +148,47 @@ class HeosClient(private val connection: HeosConnection) {
      *
      * This is the command that makes gapless playback possible: the receiver owns the resulting
      * queue and fetches the audio itself, so nothing on the phone sits in the audio path.
+     *
+     * **Retries while the receiver is still ingesting the previous add.** The command returns
+     * success as soon as it is accepted (~30ms measured), but the receiver goes on filling the
+     * queue for some time after that - ~450ms for a 13-track container, ending with
+     * `event/player_queue_changed`. A second `add_to_queue` sent inside that window is rejected
+     * with `eid=9 Out of range`, which reads like a bad parameter and is nothing of the kind.
+     *
+     * That is what broke "play all" on any folder resolving to more than one target - a multi-disc
+     * album, or an album whose tracks are queued individually - since [QueueTargetResolver] hands
+     * back a list and the caller loops over it with no gap. Measured on the real unit: back to back
+     * fails every time; a 250ms gap never did.
+     *
+     * Retrying rather than sleeping between every add keeps a single-target add (the common case)
+     * as fast as it was, and adapts to a container bigger than anything measured here.
      */
     suspend fun addToQueue(
         pid: String,
         sid: String,
         cid: String,
         mid: String? = null,
+        criteria: AddCriteria,
+    ): HeosFrame {
+        var delayMillis = ADD_TO_QUEUE_RETRY_DELAY_MILLIS
+        repeat(ADD_TO_QUEUE_ATTEMPTS - 1) {
+            try {
+                return addToQueueOnce(pid, sid, cid, mid, criteria)
+            } catch (e: HeosCommandException) {
+                if (!e.error.isBusy) throw e
+                delay(delayMillis)
+                delayMillis = (delayMillis * 2).coerceAtMost(ADD_TO_QUEUE_MAX_RETRY_DELAY_MILLIS)
+            }
+        }
+        // The last attempt's failure is the caller's to see, whatever the reason for it.
+        return addToQueueOnce(pid, sid, cid, mid, criteria)
+    }
+
+    private suspend fun addToQueueOnce(
+        pid: String,
+        sid: String,
+        cid: String,
+        mid: String?,
         criteria: AddCriteria,
     ) = connection.command(
         "browse",
@@ -180,6 +216,25 @@ class HeosClient(private val connection: HeosConnection) {
         /** The spec caps a browse response at 50 or 100 rows depending on source type. */
         const val DEFAULT_PAGE_SIZE: Int = 50
         private const val MAX_PAGES: Int = 400
+
+        /**
+         * Total tries for one [addToQueue], counting the first.
+         *
+         * Measured, not guessed: ten container adds fired back to back at a real AVR-X4500H needed
+         * at most three tries each, and that was with the receiver falling further behind on every
+         * one. Six leaves double that headroom while capping the delay on a target that is
+         * genuinely bad - which fails all six and is reported - at about four seconds.
+         */
+        private const val ADD_TO_QUEUE_ATTEMPTS: Int = 6
+
+        /** First backoff before re-sending a rejected [addToQueue]; doubles up to the cap below. */
+        private const val ADD_TO_QUEUE_RETRY_DELAY_MILLIS: Long = 300L
+
+        /**
+         * Ceiling on the doubling. Left unbounded, the last retries of a six-attempt sequence would
+         * wait 4.8s and 9.6s for a receiver that has never taken more than about a second.
+         */
+        private const val ADD_TO_QUEUE_MAX_RETRY_DELAY_MILLIS: Long = 1_000L
     }
 }
 

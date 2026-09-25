@@ -15,6 +15,7 @@ import com.denonmusic.heos.AddCriteria
 import com.denonmusic.heos.BrowseItem
 import com.denonmusic.heos.HeosClient
 import com.denonmusic.heos.PlayState
+import com.denonmusic.heos.QueueCollection
 import com.denonmusic.heos.QueueItem
 import com.denonmusic.heos.QueueTargetResolver
 import com.denonmusic.smb.SmbCredentials
@@ -338,7 +339,7 @@ class LanControlManager @Inject constructor(
         val criteria = parseAddCriteria(request) ?: return badCriteria()
 
         beginProgress("Scanning library…")
-        val targets = try {
+        val collected = try {
             runCatching {
                 QueueTargetResolver.collect(client, sid, cid) { gathered ->
                     bumpProgress("Scanning library… ($gathered found)")
@@ -349,14 +350,15 @@ class LanControlManager @Inject constructor(
         } finally {
             endProgress()
         }
-        if (targets.isEmpty()) return LanControlResponse(404, """{"error":"nothing playable found"}""")
-        if (targets.size > QueueTargetResolver.DEFAULT_MAX_QUEUE_TARGETS) {
+        if (collected is QueueCollection.TooMany) {
             return LanControlResponse(
                 400,
                 """{"error":"too many items to queue at once """ +
-                    """(limit ${QueueTargetResolver.DEFAULT_MAX_QUEUE_TARGETS}) - open a smaller folder"}""",
+                    """(limit ${collected.limit}) - open a smaller folder"}""",
             )
         }
+        val targets = (collected as QueueCollection.Complete).targets
+        if (targets.isEmpty()) return LanControlResponse(404, """{"error":"nothing playable found"}""")
         beginProgress("Queuing 0/${targets.size}…")
         try {
             playbackStarter.addAll(client, pid, targets, criteria) { done ->

@@ -64,9 +64,26 @@ data class HeosError(
     val isMissingEntity: Boolean
         get() = errorId == ERROR_INVALID_ID || text.contains("not found", ignoreCase = true)
 
+    /**
+     * True when the receiver rejected the command because it was still busy with the previous one.
+     *
+     * The spec has a dedicated code for this (13, "Processing previous command") but the
+     * AVR-X4500H does not use it for `browse/add_to_queue`: it answers [ERROR_OUT_OF_RANGE]
+     * instead, with the same "Out of range" text it uses for a genuinely bad parameter. Measured
+     * against the real unit - see [HeosClient.addToQueue].
+     */
+    val isBusy: Boolean
+        get() = errorId == ERROR_PROCESSING_PREVIOUS || errorId == ERROR_OUT_OF_RANGE
+
     companion object {
         /** "Invalid ID" per the spec's error code table. */
         const val ERROR_INVALID_ID: Int = 8
+
+        /** "Parameter out of range" per the spec - but see [isBusy] for what it also means here. */
+        const val ERROR_OUT_OF_RANGE: Int = 9
+
+        /** "Processing previous command" per the spec. */
+        const val ERROR_PROCESSING_PREVIOUS: Int = 13
     }
 }
 
