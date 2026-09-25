@@ -26,9 +26,9 @@ the main path - don't grow it into one.
 ```sh
 export JAVA_HOME="C:/Program Files/Android/Android Studio/jbr"
 
-./gradlew :app:testDebugUnitTest :core:heos:test :core:avr:test :core:smb:test   # 235 tests
-./gradlew ktlintCheck          # or ktlintFormat; rules are in .editorconfig, 140-col Kotlin
-./gradlew :app:assembleDebug
+./gradlew :app:testDebugUnitTest :core:heos:test :core:avr:test :core:smb:test
+./gradlew ktlintCheck :app:lintDebug   # both, or CI fails; ktlintFormat fixes the first
+./gradlew assembleDebug
 ```
 
 `:core:heos`, `:core:avr` and `:core:smb` are pure JVM and build with no Android SDK at all;

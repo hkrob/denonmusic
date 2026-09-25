@@ -10,8 +10,8 @@ for the current state, and the last section for what happened most recently.
 
 ## Where the work stands
 
-**Shipping.** v0.1.8 (`versionCode` 9) is published to GitHub Releases and the in-app updater
-offers it. All six phases in [`plan.md`](plan.md) are done and verified end-to-end against the real
+**Shipping.** v0.1.14 (`versionCode` 15) is published to GitHub Releases and the in-app updater
+offers it. (The version moves often; `app/build.gradle.kts` is the authority, not this line.) All six phases in [`plan.md`](plan.md) are done and verified end-to-end against the real
 AVR-X4500H. (A later "improvement plan", referenced by track letter further down this file, was
 never committed here - its Tracks A-D are all done, so nothing is lost by its absence; the sections
 below record what each one produced.)
@@ -19,10 +19,11 @@ below record what each one produced.)
 - Every module in `settings.gradle.kts` is live: `:core:heos`, `:core:avr` and `:core:smb` are pure
   JVM, plus `:app` and `:core:data` when an Android SDK is present. Only `:feature:probe` is still
   commented out, and nothing wants it - `tools/probe.py` covers that ground.
-- **235 unit tests, 0 failures, 0 skipped.** ktlint clean.
+- **239 unit tests, 0 failures, 0 skipped.** ktlint and `:app:lintDebug` clean.
 - Verified on real hardware: browse, all four `aid` queue actions, gapless album playback,
   force-stop-and-keep-playing, browse memory across a reinstall, the AVR panel, the SMB bridge
-  fallback, the Now Playing technical panel with chain integrity, and LAN control.
+  fallback, the Now Playing technical panel with chain integrity, LAN control, and the
+  now-playing notification (including after the app's task is swiped away).
 
 ### Building here
 
