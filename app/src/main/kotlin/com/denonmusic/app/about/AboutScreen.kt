@@ -53,6 +53,14 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.9" to listOf(
+        "Fixed \"Play all\" and \"Add all to queue\" failing with \"Out of range\" on multi-disc " +
+            "albums and on folders holding an extras subfolder. The receiver accepts a queue add " +
+            "before it has finished the previous one, and refuses anything sent in between; the " +
+            "app now waits for it instead of giving up.",
+        "Folders too big to queue at once are now refused straight away, instead of after a " +
+            "minutes-long scan that was always going to end in the same message.",
+    ),
     "0.1.8" to listOf(
         "Fixed the queue's move-down button doing nothing on the second-to-last track - the one " +
             "row whose move has no following track to land in front of, and so has to go to the end.",
