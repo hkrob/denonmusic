@@ -53,6 +53,13 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.15" to listOf(
+        "Fixed the now-playing notification never appearing on Android 10 and later. It was " +
+            "started the wrong way for modern Android and went foreground without saying what " +
+            "kind of service it is, either of which the system refuses outright - silently, " +
+            "because the refusal then killed the service. If it is still refused, the " +
+            "notification now appears anyway, just without the guarantee that it stays.",
+    ),
     "0.1.14" to listOf(
         "The app now asks permission to show the now-playing notification on Android 13 and " +
             "later, where it is refused by default - without it the notification and its " +

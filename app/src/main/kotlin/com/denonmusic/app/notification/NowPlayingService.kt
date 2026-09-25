@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
@@ -15,10 +16,13 @@ import android.os.IBinder
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.denonmusic.app.MainActivity
+import com.denonmusic.app.R
 import com.denonmusic.app.player.PlayerStateTracker
 import com.denonmusic.heos.PlayState
 import dagger.hilt.EntryPoint
@@ -106,9 +110,16 @@ class NowPlayingService : Service() {
                 stopSelf()
             }
         }
-        // A snapshot may already be waiting: show it now so the very first start is not a race
-        // against the collector above.
-        notifier.snapshot.value.takeIf { !it.isEmpty }?.let { show(it) }
+        // Going foreground has a deadline - a few seconds from startForegroundService - and
+        // missing it kills the process. Waiting for the state collector to produce something first
+        // is a race against that, so post whatever is known right now, even if that is only the
+        // app's name, and let the collector replace it a moment later.
+        val snapshot = notifier.snapshot.value
+        if (snapshot.isEmpty) {
+            if (!started) startForegroundOrFallBack(build(snapshot))
+        } else {
+            show(snapshot)
+        }
         // START_STICKY: if the system reclaims the process while the receiver is still playing,
         // coming back is the right answer - the tracker re-attaches and refreshes from the receiver,
         // so there is no stale state to inherit.
@@ -141,7 +152,7 @@ class NowPlayingService : Service() {
     }
 
     private fun notify(snapshot: NowPlayingSnapshot) {
-        if (snapshot.isEmpty) return
+        if (snapshot.isEmpty && started) return
         mediaSession?.publish(snapshot, art)
         val notification = build(snapshot)
         if (started) {
@@ -156,8 +167,45 @@ class NowPlayingService : Service() {
                 NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
             }
         } else {
-            startForeground(NOTIFICATION_ID, notification)
+            startForegroundOrFallBack(notification)
+        }
+    }
+
+    /**
+     * Goes foreground, and if the system refuses, still shows the notification.
+     *
+     * Three things here exist only for Android 10 and later, and all three were missing while this
+     * was developed against an Android 9 phone - where a bare `startForeground(id, notification)`
+     * is simply correct and none of this is reachable:
+     *
+     *  - the foreground service type has to be passed explicitly from API 29, and from API 34 a
+     *    typed service that does not is rejected outright;
+     *  - going foreground can be refused (a background start, or a `mediaPlayback` service the
+     *    system is not satisfied is playing media), which throws rather than returning anything;
+     *  - and an uncaught throw here takes the service down, which is a notification that never
+     *    appears and says nothing about why.
+     *
+     * So a refusal falls back to an ordinary notification: it loses the promise that the process
+     * stays alive, but the controls are there and they work, which beats silence.
+     */
+    private fun startForegroundOrFallBack(notification: android.app.Notification) {
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+        } else {
+            0
+        }
+        try {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
             started = true
+        } catch (e: Exception) {
+            val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+            if (allowed) {
+                NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
+                started = true
+            }
+            Log.w(TAG, "Could not start in the foreground; showing a plain notification instead", e)
         }
     }
 
@@ -173,7 +221,7 @@ class NowPlayingService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(snapshot.title)
+            .setContentTitle(snapshot.title ?: getString(R.string.app_name))
             .setContentText(listOfNotNull(snapshot.artist, snapshot.album).joinToString(" - ").ifBlank { null })
             .setLargeIcon(art)
             .setContentIntent(openApp)
@@ -255,14 +303,21 @@ class NowPlayingService : Service() {
     }
 
     companion object {
+        private const val TAG = "NowPlayingService"
         private const val CHANNEL_ID = "now_playing"
         private const val NOTIFICATION_ID = 1
         private const val ACTION_PLAY_PAUSE = "com.denonmusic.app.PLAY_PAUSE"
         private const val ACTION_NEXT = "com.denonmusic.app.NEXT"
         private const val ACTION_STOP = "com.denonmusic.app.STOP"
 
+        /**
+         * `startForegroundService`, not `startService`: from Android 8 a plain `startService` from
+         * anywhere but the foreground throws, and this is called from a state collector that can
+         * fire at any time - including while the app is in the background, which is precisely when
+         * the notification matters.
+         */
         fun start(context: Context) {
-            context.startService(Intent(context, NowPlayingService::class.java))
+            ContextCompat.startForegroundService(context, Intent(context, NowPlayingService::class.java))
         }
 
         fun stop(context: Context) {
