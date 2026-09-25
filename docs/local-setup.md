@@ -690,3 +690,34 @@ entry in `AboutScreen.kt`; the ones worth knowing as protocol or lifecycle facts
   `SettingsRepository` are unencrypted preferences holding a real NAS account's credentials. The
   `EncryptedSharedPreferences` migration flagged under "Continuing the branch" above is still the
   oldest outstanding item in this repo.
+
+## `add_to_queue` is asynchronous, and says "Out of range" when it isn't (2026-09-25)
+
+Reported from the app: "PLAY ALL" on some folders came back
+`HEOS browse/add_to_queue failed: eid=9 Out of range`. It correlated with folders containing an
+`Artwork` subfolder, which turned out to be a red herring - measured against 10.1.10.50:
+
+- `browse/add_to_queue` answers **success in ~30ms**, but the receiver keeps filling the queue for
+  a good while after - ~450ms for a 13-track container, ending with `event/player_queue_changed`.
+- A second `add_to_queue` sent inside that window is rejected with `eid=9`, text "Out of range".
+  The spec's code 9 is "parameter out of range" and there is a separate code 13 for "processing
+  previous command"; this receiver does not use it here. **Nothing is wrong with the parameters.**
+- Sweeping the gap between two container adds: **0ms fails every time, 250ms and up never did.**
+  Ten adds fired back to back with retry needed at most three attempts each.
+
+So it broke precisely the folders `QueueTargetResolver` resolves to more than one target - a
+multi-disc album, or any album whose tracks are queued individually - because `addAll` loops with
+no gap. The first add replaced the queue and the rest were refused, which reads in the UI as the
+folder being unplayable. `HeosClient.addToQueue` now retries while `HeosError.isBusy`.
+
+The same session made an oversized folder refuse promptly instead of after minutes: the walk used
+to gather everything and let the caller check the size, so a huge container was paged through in
+full before being refused. `QueueTargetResolver.collect` now returns `QueueCollection.Complete` or
+`.TooMany` and gives up the moment the budget is blown. A subtree legitimately inside the limit is
+still walked in full, so a deep one still takes its time - only the refusals got faster.
+
+**Probing note:** `tools/probe.py`'s `heos` subcommand returns the interim "command under process"
+ack for any slow DLNA browse, so it shows an empty payload where the real answer follows a moment
+later. The app was fixed for this long ago (see
+[`heos-dlna-plex-jellyfin-conflict.md`](heos-dlna-plex-jellyfin-conflict.md)); the probe never was.
+Skip frames whose message contains `command under process` when scripting against it.

@@ -42,6 +42,11 @@ modules Android-free - that gating is load-bearing for CI.
   Any new prefix match needs the same scepticism.
 - **Volume wire format is positional**, so every value must be zero-padded to two digits before the
   optional half-step digit. `MV55` is -25 dB, not -74.5 dB.
+- **`browse/add_to_queue` returns success long before the receiver has finished with it** (~30ms vs
+  ~450ms for a 13-track container, which ends with `event/player_queue_changed`). A second add
+  inside that window is refused with `eid=9 Out of range` - the spec's "parameter out of range",
+  which is not remotely what went wrong. `HeosClient.addToQueue` retries for this; don't add a
+  second queueing path that doesn't.
 - **Check protocol behaviour against the receiver instead of the comments.** There is direct LAN
   access to the real unit at `10.1.10.50`, and `tools/probe.py <ip> tap|sources|avr|heos` is the
   tool for it (standard library only). Several comments in this codebase were written from the spec
