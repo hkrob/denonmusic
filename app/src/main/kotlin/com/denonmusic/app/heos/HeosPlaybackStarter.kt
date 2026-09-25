@@ -2,6 +2,7 @@ package com.denonmusic.app.heos
 
 import com.denonmusic.heos.AddCriteria
 import com.denonmusic.heos.HeosClient
+import com.denonmusic.heos.PlayState
 import com.denonmusic.heos.QueueTarget
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -67,11 +68,29 @@ class HeosPlaybackStarter @Inject constructor(private val bridgeQueue: BridgeQue
         criteria: AddCriteria,
         onQueued: (completed: Int) -> Unit = {},
     ) = starting {
+        // `aid=4` means "replace the queue and play", and the receiver carries it out in its own
+        // time. Measured on a real AVR-X4500H: sent alone it replaces correctly, but with a second
+        // add arriving straight after it, *both* halves of it are lost - the old queue survives and
+        // the new parts are merely appended, and playback never starts. That is the whole of the
+        // "play all queued the album but played nothing" report, and it also silently appended to
+        // whatever was queued before instead of replacing it.
+        //
+        // So a multi-part replace does not ask for aid=4 at all. Clearing the queue and appending
+        // every part is the same intent expressed in steps the receiver cannot half-apply, and the
+        // play at the end then always starts the first track of what was just queued, because the
+        // queue began empty. Verified against the receiver.
+        val replacing = criteria == AddCriteria.ReplaceAndPlay && targets.size > 1
+        if (replacing) client.clearQueue(pid)
+
         targets.forEachIndexed { index, target ->
-            val partCriteria = if (index == 0) criteria else AddCriteria.AddToEnd
+            val partCriteria = if (index == 0 && !replacing) criteria else AddCriteria.AddToEnd
             client.addToQueue(pid = pid, sid = target.sid, cid = target.cid, mid = target.mid, criteria = partCriteria)
             onQueued(index + 1)
         }
+
+        // Best-effort: a queue that was built correctly should not be reported as a failure just
+        // because the receiver would not start (powered off, or on another input).
+        if (replacing) runCatching { client.setPlayState(pid, PlayState.Play) }
     }
 
     suspend fun playQueueItem(client: HeosClient, pid: String, qid: Int) =

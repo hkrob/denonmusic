@@ -53,6 +53,12 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.11" to listOf(
+        "Fixed \"Play all\" on a multi-disc album queueing the tracks but never starting them, " +
+            "and adding to whatever was already queued instead of replacing it. The receiver " +
+            "carries out \"replace and play\" in its own time, and a second disc sent straight " +
+            "after it threw away both the replace and the play.",
+    ),
     "0.1.10" to listOf(
         "Fixed the update check itself failing with a parser error, which is why 0.1.8 and 0.1.9 " +
             "could not update themselves and had to be installed by hand. The hardening added in " +
