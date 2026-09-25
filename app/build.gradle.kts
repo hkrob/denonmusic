@@ -39,8 +39,8 @@ android {
         applicationId = "com.denonmusic.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.1.11"
+        versionCode = 13
+        versionName = "0.1.12"
 
         buildConfigField(
             "String",
@@ -129,6 +129,7 @@ dependencies {
 
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.media)
 
     testImplementation(kotlin("test"))
     testImplementation(libs.junit.jupiter)

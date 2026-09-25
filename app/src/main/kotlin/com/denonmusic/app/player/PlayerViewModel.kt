@@ -10,6 +10,8 @@ import com.denonmusic.app.heos.HeosConnectionState
 import com.denonmusic.app.heos.HeosPlaybackStarter
 import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.app.lancontrol.LanControlManager
+import com.denonmusic.app.notification.NowPlayingNotifier
+import com.denonmusic.app.notification.NowPlayingShade
 import com.denonmusic.avr.SignalType
 import com.denonmusic.data.settings.SettingsRepository
 import com.denonmusic.heos.NowPlaying
@@ -123,6 +125,8 @@ class PlayerViewModel @Inject constructor(
     private val lanControlManager: LanControlManager,
     private val playbackStarter: HeosPlaybackStarter,
     private val bitPerfectPolicyController: BitPerfectPolicyController,
+    private val nowPlayingNotifier: NowPlayingNotifier,
+    private val nowPlayingShade: NowPlayingShade,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
@@ -153,6 +157,25 @@ class PlayerViewModel @Inject constructor(
                 _uiState.update { it.copy(bridgeQueue = bridgeState) }
             }
         }
+        // The notification mirrors this state rather than polling for its own - see
+        // [NowPlayingNotifier]. Keeping the wiring here, next to the state it reads, means no other
+        // screen has to know the shade exists.
+        viewModelScope.launch {
+            uiState.collect { state ->
+                nowPlayingNotifier.publish(state)
+                nowPlayingShade.setShowing(!nowPlayingNotifier.snapshot.value.isEmpty)
+            }
+        }
+    }
+
+    /**
+     * The shade can only be as truthful as this view model, which is what publishes to it, so it
+     * goes when this does - see [com.denonmusic.app.notification.NowPlayingService].
+     */
+    override fun onCleared() {
+        nowPlayingNotifier.clear()
+        nowPlayingShade.setShowing(false)
+        super.onCleared()
     }
 
     private suspend fun bootstrap() {

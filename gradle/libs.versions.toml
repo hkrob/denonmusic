@@ -16,6 +16,7 @@ ksp = "2.1.0-1.0.29"
 coreKtx = "1.15.0"
 jcifsNg = "2.1.10"
 work = "2.10.0"
+media = "1.7.0"
 ktlintPlugin = "12.1.2"
 ktlint = "1.4.1"
 robolectric = "4.15.1"
@@ -58,6 +59,9 @@ androidx-datastore-preferences = { module = "androidx.datastore:datastore-prefer
 jcifs-ng = { module = "eu.agno3.jcifs:jcifs-ng", version.ref = "jcifsNg" }
 
 androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
+
+# MediaSessionCompat + NotificationCompat.MediaStyle: the notification-shade media controls.
+androidx-media = { module = "androidx.media:media", version.ref = "media" }
 
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 robolectric-junit5 = { module = "tech.apter.junit5.jupiter:robolectric-extension", version.ref = "robolectricJunit5" }

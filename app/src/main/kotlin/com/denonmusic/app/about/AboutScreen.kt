@@ -53,6 +53,12 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.12" to listOf(
+        "Added a notification with play/pause, next and stop, showing the current track, artist " +
+            "and album art - so the receiver can be controlled without opening the app. It clears " +
+            "itself when the app is closed, because the app is what keeps it honest about what " +
+            "the receiver is doing; the music carries on regardless.",
+    ),
     "0.1.11" to listOf(
         "Fixed \"Play all\" on a multi-disc album queueing the tracks but never starting them, " +
             "and adding to whatever was already queued instead of replacing it. The receiver " +

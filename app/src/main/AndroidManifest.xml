@@ -6,6 +6,16 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!--
+      The now-playing notification and its transport buttons (app/notification/). It runs as a
+      foreground service so the controls survive the app leaving the screen, which is the only time
+      they are worth anything. FOREGROUND_SERVICE_MEDIA_PLAYBACK is the type Android 14+ requires
+      to be declared alongside the service; POST_NOTIFICATIONS is only asked for from Android 13.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
       allowBackup is off deliberately. Everything this app stores is either a LAN address or a
       password: the SMB share credentials and the LAN control token live in a plain (unencrypted)
       DataStore, so with backup enabled `adb backup` hands both to anyone with USB access to an
@@ -29,6 +39,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          Not exported: nothing outside the app has any business driving it, and its actions arrive
+          as explicit intents from the notification's own PendingIntents.
+        -->
+        <service
+            android:name=".notification.NowPlayingService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- Hands a downloaded update APK (cache/updates) to the system installer read-only. -->
         <provider
