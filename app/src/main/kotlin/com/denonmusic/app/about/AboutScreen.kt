@@ -53,6 +53,12 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.13" to listOf(
+        "The now-playing notification no longer disappears when the app is closed. It keeps " +
+            "following the receiver on its own - including changes made from the receiver's own " +
+            "remote or another app - and its buttons keep working, with no app window open. " +
+            "It goes when playback stops, or when you dismiss it.",
+    ),
     "0.1.12" to listOf(
         "Added a notification with play/pause, next and stop, showing the current track, artist " +
             "and album art - so the receiver can be controlled without opening the app. It clears " +

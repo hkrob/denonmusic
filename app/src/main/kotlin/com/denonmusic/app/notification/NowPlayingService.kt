@@ -16,6 +16,7 @@ import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.denonmusic.app.MainActivity
+import com.denonmusic.app.player.PlayerStateTracker
 import com.denonmusic.heos.PlayState
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -37,12 +38,14 @@ import java.util.concurrent.ConcurrentHashMap
  * A foreground service, because a plain notification would be killed the moment the app is no
  * longer visible - which is exactly when these controls are worth having.
  *
- * **It stops itself when there is nothing to show, and when the app goes away.** This app is a
- * remote control, not a player: the state it displays is mirrored from `PlayerViewModel`, so once
- * that is gone the notification could only lie about what the receiver is doing. A media
- * notification that has stopped tracking reality is worse than no notification, so it leaves
- * rather than going stale. Music on the receiver carries on either way - nothing here is in the
- * audio path.
+ * It outlives the UI. [PlayerStateTracker] is a singleton that keeps resolving the player and
+ * refreshing its state for as long as this service is attached to it, so swiping the app away
+ * leaves the notification both present and correct - verified by changing the track on the
+ * receiver itself, with no screen open, and watching the shade follow.
+ *
+ * It stops itself when there is nothing left to show: the queue ran out, or playback stopped with
+ * no screen attached (see [PlayerStateTracker.publishToShade]). Music on the receiver carries on
+ * regardless either way - nothing here is in the audio path.
  */
 class NowPlayingService : Service() {
 
@@ -57,11 +60,13 @@ class NowPlayingService : Service() {
     @InstallIn(SingletonComponent::class)
     interface Graph {
         fun nowPlayingNotifier(): NowPlayingNotifier
+
+        fun playerStateTracker(): PlayerStateTracker
     }
 
-    private val notifier: NowPlayingNotifier by lazy {
-        EntryPointAccessors.fromApplication(applicationContext, Graph::class.java).nowPlayingNotifier()
-    }
+    private val graph: Graph by lazy { EntryPointAccessors.fromApplication(applicationContext, Graph::class.java) }
+    private val notifier: NowPlayingNotifier by lazy { graph.nowPlayingNotifier() }
+    private val tracker: PlayerStateTracker by lazy { graph.playerStateTracker() }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var mediaSession: MediaSessionCompat? = null
@@ -74,6 +79,9 @@ class NowPlayingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // Keeps the state this notification shows being refreshed once the last screen is gone -
+        // without this the shade would be a snapshot of whatever was true when the app closed.
+        tracker.attach(fromUi = false)
         createChannel()
         mediaSession = MediaSessionCompat(this, "DenonMusic").apply { isActive = true }
         scope.launch {
@@ -98,22 +106,18 @@ class NowPlayingService : Service() {
         // A snapshot may already be waiting: show it now so the very first start is not a race
         // against the collector above.
         notifier.snapshot.value.takeIf { !it.isEmpty }?.let { show(it) }
-        // START_NOT_STICKY: there is nothing to resume on our own if the system kills us, because
-        // the state this displays lives in the app process that is already gone.
-        return START_NOT_STICKY
+        // START_STICKY: if the system reclaims the process while the receiver is still playing,
+        // coming back is the right answer - the tracker re-attaches and refreshes from the receiver,
+        // so there is no stale state to inherit.
+        return START_STICKY
     }
 
     override fun onDestroy() {
+        tracker.detach(fromUi = false)
         mediaSession?.release()
         mediaSession = null
         scope.cancel()
         super.onDestroy()
-    }
-
-    /** The app's task being swiped away takes the mirrored state with it, so take the shade too. */
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        stopSelf()
-        super.onTaskRemoved(rootIntent)
     }
 
     private fun show(snapshot: NowPlayingSnapshot) {

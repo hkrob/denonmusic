@@ -3,31 +3,18 @@ package com.denonmusic.app.player
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denonmusic.app.avr.AvrSession
-import com.denonmusic.app.avr.BitPerfectPolicyController
 import com.denonmusic.app.bridge.BridgeQueueController
 import com.denonmusic.app.bridge.BridgeQueueState
-import com.denonmusic.app.heos.HeosConnectionState
 import com.denonmusic.app.heos.HeosPlaybackStarter
 import com.denonmusic.app.heos.HeosSession
-import com.denonmusic.app.lancontrol.LanControlManager
-import com.denonmusic.app.notification.NowPlayingNotifier
-import com.denonmusic.app.notification.NowPlayingShade
 import com.denonmusic.avr.SignalType
-import com.denonmusic.data.settings.SettingsRepository
 import com.denonmusic.heos.NowPlaying
 import com.denonmusic.heos.PlayState
 import com.denonmusic.heos.QueueItem
 import com.denonmusic.heos.RepeatMode
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -111,251 +98,81 @@ data class PlayerUiState(
 }
 
 /**
- * Owns everything about "the currently selected HEOS player" that Browse, Now Playing and Queue all
- * need: which player, what's playing, transport state, and the live queue. Hoisted once at
- * [com.denonmusic.app.nav.MainScreen] level (outside the nav graph) so every destination observes the
- * same instance instead of each re-resolving the player id and re-subscribing to the event socket.
+ * A screen's view of "the currently selected HEOS player", shared by Browse, Now Playing and Queue:
+ * what's playing, transport state, and the live queue, plus the actions those screens can take.
+ *
+ * The state itself, and the one resync loop and event subscription that produce it, belong to
+ * [PlayerStateTracker] - a singleton, because the notification has to go on showing them after the
+ * last screen is gone. This view model attaches to it for as long as the UI is up.
+ *
+ * Still hoisted once at [com.denonmusic.app.nav.MainScreen] level (outside the nav graph) so every
+ * destination observes the same instance.
  */
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val session: HeosSession,
     private val avrSession: AvrSession,
-    private val settings: SettingsRepository,
     private val bridgeQueueController: BridgeQueueController,
-    private val lanControlManager: LanControlManager,
     private val playbackStarter: HeosPlaybackStarter,
-    private val bitPerfectPolicyController: BitPerfectPolicyController,
-    private val nowPlayingNotifier: NowPlayingNotifier,
-    private val nowPlayingShade: NowPlayingShade,
+    private val tracker: PlayerStateTracker,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(PlayerUiState())
-    val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
-
-    private var eventsJob: Job? = null
-    private var resyncJob: Job? = null
-    private var lastPlayState: PlayState? = null
+    /**
+     * The receiver's state lives in [PlayerStateTracker], not here, so that the notification can go
+     * on showing it with no screen attached. This view model is a screen's view of that state plus
+     * the actions a screen can take.
+     */
+    val uiState: StateFlow<PlayerUiState> = tracker.state
 
     init {
-        // Idempotent, and PlayerViewModel (created once at MainScreen level) is the natural place to
-        // kick this off: it's alive for the app's whole run regardless of which tab is open, same as
-        // every other session this ViewModel already bootstraps below.
-        lanControlManager.ensureStarted()
-        viewModelScope.launch {
-            session.state.collectLatest { state ->
-                if (state is HeosConnectionState.Connected) {
-                    bootstrap()
-                } else {
-                    eventsJob?.cancel()
-                    resyncJob?.cancel()
-                    _uiState.value = PlayerUiState()
-                }
-            }
-        }
-        viewModelScope.launch {
-            bridgeQueueController.state.collectLatest { bridgeState ->
-                _uiState.update { it.copy(bridgeQueue = bridgeState) }
-            }
-        }
-        // The notification mirrors this state rather than polling for its own - see
-        // [NowPlayingNotifier]. Keeping the wiring here, next to the state it reads, means no other
-        // screen has to know the shade exists.
-        viewModelScope.launch {
-            uiState.collect { state ->
-                nowPlayingNotifier.publish(state)
-                nowPlayingShade.setShowing(!nowPlayingNotifier.snapshot.value.isEmpty)
-            }
-        }
+        tracker.attach(fromUi = true)
     }
 
-    /**
-     * The shade can only be as truthful as this view model, which is what publishes to it, so it
-     * goes when this does - see [com.denonmusic.app.notification.NowPlayingService].
-     */
     override fun onCleared() {
-        nowPlayingNotifier.clear()
-        nowPlayingShade.setShowing(false)
+        tracker.detach(fromUi = true)
         super.onCleared()
-    }
-
-    private suspend fun bootstrap() {
-        // The AVR and HEOS ports live on the same box, so the same host serves both. Started here
-        // too (not only from AvrViewModel) so the bit-perfect policy applies even if the user has
-        // never opened the AVR tab.
-        runCatching { settings.settings.first() }.getOrNull()?.avrHost?.let { avrSession.start(it) }
-        startPeriodicResync()
-    }
-
-    /**
-     * A poll-based safety net on top of [subscribeEvents]'s event-driven updates - independent of
-     * [HeosSession]'s own now-heartbeated event socket, since even a healthy connection can miss the
-     * odd event, and a third party (the receiver's own remote, another HEOS app) changing state
-     * doesn't necessarily fire an event this app happens to be listening for. Never lets the UI drift
-     * further than this interval from ground truth, whatever the cause.
-     *
-     * Also the only place [resolvePlayerAndRefresh] runs from, so re-resolving the player id is on
-     * the same clock as everything else - see its own doc for why that can't be a one-shot lookup.
-     */
-    private fun startPeriodicResync() {
-        resyncJob?.cancel()
-        resyncJob = viewModelScope.launch {
-            while (isActive) {
-                resolvePlayerAndRefresh()
-                delay(if (_uiState.value.noHeosPlayerFound) NO_PLAYER_RETRY_INTERVAL_MS else RESYNC_INTERVAL_MS)
-            }
-        }
-    }
-
-    /**
-     * Re-resolves the active HEOS player on every tick via [HeosSession.resolvePid], which never
-     * caches - see its doc for the receiver behaviour that makes a latched pid a trap.
-     *
-     * Polling here both recovers automatically once the receiver's registry comes back and surfaces
-     * the gap to the user in the meantime via [PlayerUiState.noHeosPlayerFound], instead of a
-     * generic-looking "nothing playing".
-     */
-    private suspend fun resolvePlayerAndRefresh() {
-        val playerPid = session.resolvePid()
-        if (playerPid == null) {
-            if (!_uiState.value.noHeosPlayerFound) {
-                eventsJob?.cancel()
-                _uiState.update {
-                    it.copy(
-                        noHeosPlayerFound = true,
-                        pid = null,
-                        nowPlaying = null,
-                        playState = null,
-                        queue = emptyList(),
-                    )
-                }
-            }
-            return
-        }
-        val recovered = _uiState.value.pid != playerPid
-        _uiState.update { it.copy(pid = playerPid, noHeosPlayerFound = false) }
-        if (recovered) subscribeEvents(playerPid)
-        refreshAll(playerPid)
-        refreshQueue(playerPid)
-    }
-
-    private suspend fun refreshAll(pid: String) {
-        val client = session.heosClient ?: return
-        val nowPlaying = runCatching { client.getNowPlaying(pid) }.getOrNull()
-        val playState = runCatching { client.getPlayState(pid) }.getOrNull()
-        val volume = runCatching { client.getVolume(pid) }.getOrNull()
-        val playMode = runCatching { client.getPlayMode(pid) }.getOrNull()
-        _uiState.update {
-            it.copy(
-                nowPlaying = nowPlaying,
-                playState = playState,
-                volume = volume,
-                repeat = playMode?.repeat,
-                shuffle = playMode?.shuffle,
-            )
-        }
-        if (playState == PlayState.Play && lastPlayState != PlayState.Play) {
-            applyBitPerfectPolicyOnPlaybackStart()
-        }
-        lastPlayState = playState
-        refreshTechnicalInfo()
-    }
-
-    /**
-     * Reads the signal the AVR is actually receiving right now. Unlike [applyBitPerfectPolicyOnPlaybackStart]
-     * this isn't gated on a play-state edge: [refreshAll] itself only runs on a handful of HEOS
-     * events (now-playing/state/volume/repeat/shuffle changed), not every progress tick, so querying
-     * the AVR's telnet port here as often as that runs is cheap enough not to need its own gate.
-     */
-    private suspend fun refreshTechnicalInfo() {
-        val client = avrSession.avrClient ?: return
-        val info = TechnicalInfo(
-            signalType = runCatching { client.signalType() }.getOrNull(),
-            sampleRateKhz = runCatching { client.sampleRateKhz() }.getOrNull(),
-            activeOutputChannels = runCatching { client.outputChannels() }.getOrDefault(emptyList()).size,
-        )
-        _uiState.update { it.copy(technicalInfo = info) }
-    }
-
-    /**
-     * The plan's bit-perfect policy applies "on queue-start": the moment playback transitions into
-     * [PlayState.Play], not on every progress tick. `lastPlayState` in [refreshAll] is what turns a
-     * level (current state) into that edge (state that just changed).
-     */
-    private suspend fun applyBitPerfectPolicyOnPlaybackStart() {
-        bitPerfectPolicyController.applyStored(avrSession.avrClient)
-    }
-
-    private suspend fun refreshQueue(pid: String) {
-        val client = session.heosClient ?: return
-        val items = runCatching { client.getQueue(pid) }.getOrNull().orEmpty()
-        _uiState.update { it.copy(queue = items) }
-    }
-
-    private fun subscribeEvents(pid: String) {
-        eventsJob?.cancel()
-        val events = session.events ?: return
-        eventsJob = viewModelScope.launch {
-            events.collect { frame ->
-                when (frame.eventName) {
-                    "player_now_playing_changed", "player_state_changed", "player_volume_changed",
-                    "repeat_mode_changed", "shuffle_mode_changed",
-                    -> refreshAll(pid)
-                    "player_now_playing_progress" -> {
-                        val position = frame.attributes["cur_pos"]?.toLongOrNull() ?: 0L
-                        val duration = frame.attributes["duration"]?.toLongOrNull() ?: 0L
-                        _uiState.update { it.copy(progress = Progress(position, duration)) }
-                    }
-                    "player_queue_changed" -> refreshQueue(pid)
-                }
-                if (frame.eventName == "player_volume_changed") {
-                    frame.attributes["mute"]?.let { mute ->
-                        _uiState.update { it.copy(muted = mute == "on") }
-                    }
-                }
-            }
-        }
     }
 
     fun togglePlayPause() {
         val client = session.heosClient ?: return
-        val pid = _uiState.value.pid ?: return
-        val next = if (_uiState.value.playState == PlayState.Play) PlayState.Pause else PlayState.Play
+        val pid = tracker.state.value.pid ?: return
+        val next = if (tracker.state.value.playState == PlayState.Play) PlayState.Pause else PlayState.Play
         viewModelScope.launch {
             runCatching { client.setPlayState(pid, next) }
-                .onSuccess { _uiState.update { it.copy(playState = next) } }
+                .onSuccess { tracker.update { it.copy(playState = next) } }
         }
     }
 
     fun playNext() {
-        if (_uiState.value.isBridgeModeActive) return bridgeQueueController.next()
+        if (tracker.state.value.isBridgeModeActive) return bridgeQueueController.next()
         val client = session.heosClient ?: return
-        val pid = _uiState.value.pid ?: return
+        val pid = tracker.state.value.pid ?: return
         viewModelScope.launch { runCatching { client.playNext(pid) } }
     }
 
     fun playPrevious() {
-        if (_uiState.value.isBridgeModeActive) return bridgeQueueController.previous()
+        if (tracker.state.value.isBridgeModeActive) return bridgeQueueController.previous()
         val client = session.heosClient ?: return
-        val pid = _uiState.value.pid ?: return
+        val pid = tracker.state.value.pid ?: return
         viewModelScope.launch { runCatching { client.playPrevious(pid) } }
     }
 
     fun stop() {
         val client = session.heosClient ?: return
-        val pid = _uiState.value.pid ?: return
+        val pid = tracker.state.value.pid ?: return
         viewModelScope.launch {
             runCatching { client.setPlayState(pid, PlayState.Stop) }
-                .onSuccess { _uiState.update { it.copy(playState = PlayState.Stop) } }
+                .onSuccess { tracker.update { it.copy(playState = PlayState.Stop) } }
         }
     }
 
     fun toggleMute() {
         val client = session.heosClient ?: return
-        val pid = _uiState.value.pid ?: return
-        val next = !_uiState.value.muted
+        val pid = tracker.state.value.pid ?: return
+        val next = !tracker.state.value.muted
         viewModelScope.launch {
             runCatching { client.setMute(pid, next) }
-                .onSuccess { _uiState.update { it.copy(muted = next) } }
+                .onSuccess { tracker.update { it.copy(muted = next) } }
         }
     }
 
@@ -367,51 +184,51 @@ class PlayerViewModel @Inject constructor(
 
     fun setVolume(level: Int) {
         val client = session.heosClient ?: return
-        val pid = _uiState.value.pid ?: return
+        val pid = tracker.state.value.pid ?: return
         viewModelScope.launch {
             runCatching { client.setVolume(pid, level) }
-                .onSuccess { _uiState.update { it.copy(volume = level) } }
+                .onSuccess { tracker.update { it.copy(volume = level) } }
         }
     }
 
     fun setRepeat(mode: RepeatMode) {
-        if (_uiState.value.isBridgeModeActive) return bridgeQueueController.setRepeat(mode)
+        if (tracker.state.value.isBridgeModeActive) return bridgeQueueController.setRepeat(mode)
         val client = session.heosClient ?: return
-        val pid = _uiState.value.pid ?: return
-        val shuffle = _uiState.value.shuffle ?: false
+        val pid = tracker.state.value.pid ?: return
+        val shuffle = tracker.state.value.shuffle ?: false
         viewModelScope.launch {
             runCatching { client.setPlayMode(pid, mode, shuffle) }
-                .onSuccess { _uiState.update { it.copy(repeat = mode) } }
+                .onSuccess { tracker.update { it.copy(repeat = mode) } }
         }
     }
 
     fun toggleShuffle() {
-        if (_uiState.value.isBridgeModeActive) return bridgeQueueController.toggleShuffle()
+        if (tracker.state.value.isBridgeModeActive) return bridgeQueueController.toggleShuffle()
         val client = session.heosClient ?: return
-        val pid = _uiState.value.pid ?: return
-        val repeat = _uiState.value.repeat ?: RepeatMode.Off
-        val next = !(_uiState.value.shuffle ?: false)
+        val pid = tracker.state.value.pid ?: return
+        val repeat = tracker.state.value.repeat ?: RepeatMode.Off
+        val next = !(tracker.state.value.shuffle ?: false)
         viewModelScope.launch {
             runCatching { client.setPlayMode(pid, repeat, next) }
-                .onSuccess { _uiState.update { it.copy(shuffle = next) } }
+                .onSuccess { tracker.update { it.copy(shuffle = next) } }
         }
     }
 
     fun playQueueItem(qid: Int) {
         val client = session.heosClient ?: return
-        val pid = _uiState.value.pid ?: return
+        val pid = tracker.state.value.pid ?: return
         viewModelScope.launch { runCatching { playbackStarter.playQueueItem(client, pid, qid) } }
     }
 
     fun removeFromQueue(qid: Int) {
         val client = session.heosClient ?: return
-        val pid = _uiState.value.pid ?: return
+        val pid = tracker.state.value.pid ?: return
         viewModelScope.launch {
             // Optimistic removal: player_queue_changed will also fire and refresh from the receiver,
             // but that round trip is visibly slower than the swipe-to-dismiss animation it follows.
-            _uiState.update { state -> state.copy(queue = state.queue.filterNot { it.qid == qid }) }
+            tracker.update { state -> state.copy(queue = state.queue.filterNot { it.qid == qid }) }
             runCatching { client.removeFromQueue(pid, listOf(qid)) }
-                .onFailure { refreshQueue(pid) }
+                .onFailure { tracker.refreshQueue(pid) }
         }
     }
 
@@ -425,35 +242,35 @@ class PlayerViewModel @Inject constructor(
      */
     fun moveQueueItem(qid: Int, beforeQid: Int?) {
         val client = session.heosClient ?: return
-        val pid = _uiState.value.pid ?: return
-        val destination = beforeQid ?: (_uiState.value.queue.size + 1)
+        val pid = tracker.state.value.pid ?: return
+        val destination = beforeQid ?: (tracker.state.value.queue.size + 1)
         viewModelScope.launch {
             runCatching { client.moveQueueItem(pid, listOf(qid), destination) }
-                .onFailure { e -> _uiState.update { it.copy(message = e.message ?: "Move failed") } }
+                .onFailure { e -> tracker.update { it.copy(message = e.message ?: "Move failed") } }
         }
     }
 
     fun clearQueue() {
         val client = session.heosClient ?: return
-        val pid = _uiState.value.pid ?: return
+        val pid = tracker.state.value.pid ?: return
         viewModelScope.launch {
             runCatching { client.clearQueue(pid) }
-                .onSuccess { _uiState.update { it.copy(queue = emptyList()) } }
+                .onSuccess { tracker.update { it.copy(queue = emptyList()) } }
         }
     }
 
     fun saveQueueAsPlaylist(name: String) {
         val client = session.heosClient ?: return
-        val pid = _uiState.value.pid ?: return
+        val pid = tracker.state.value.pid ?: return
         viewModelScope.launch {
             runCatching { client.saveQueueAsPlaylist(pid, name) }
-                .onFailure { e -> _uiState.update { it.copy(message = e.message ?: "Save failed") } }
-                .onSuccess { _uiState.update { it.copy(message = "Saved as \"$name\"") } }
+                .onFailure { e -> tracker.update { it.copy(message = e.message ?: "Save failed") } }
+                .onSuccess { tracker.update { it.copy(message = "Saved as \"$name\"") } }
         }
     }
 
     fun dismissMessage() {
-        _uiState.update { it.copy(message = null) }
+        tracker.update { it.copy(message = null) }
     }
 
     // -- phase-6 bridge queue pass-throughs, for QueueScreen when isBridgeModeActive -------------
@@ -463,11 +280,4 @@ class PlayerViewModel @Inject constructor(
     fun removeBridgeQueueItem(index: Int) = bridgeQueueController.removeAt(index)
 
     fun clearBridgeQueue() = bridgeQueueController.clear()
-
-    private companion object {
-        const val RESYNC_INTERVAL_MS = 15_000L
-
-        /** Tighter than [RESYNC_INTERVAL_MS] while no player is found, so recovery (e.g. a power cycle) shows up promptly. */
-        const val NO_PLAYER_RETRY_INTERVAL_MS = 5_000L
-    }
 }
