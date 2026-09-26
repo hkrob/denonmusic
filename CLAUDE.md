@@ -20,13 +20,13 @@ the main path - don't grow it into one.
 
 ## Build
 
-`JAVA_HOME` **must** be set; this machine's default `java` is 11 and the Android Gradle plugin needs
-17+, failing during startup with an error that doesn't name the cause:
+The project lives on Linux (`/workspace/android-denonmusic`); it was moved from Windows, so any
+`C:/...` path or `.bat`/`.ps1` reference you meet is a leftover. `JAVA_HOME` **must** point at a JDK
+17+ - the Android Gradle plugin fails during startup with an error that doesn't name the cause. Here
+it is already set to Temurin 21 (`/usr/lib/jvm/temurin-21-jdk-amd64`), so just check `java -version`:
 
 ```sh
-export JAVA_HOME="C:/Program Files/Android/Android Studio/jbr"
-
-./gradlew :app:testDebugUnitTest :core:heos:test :core:avr:test :core:smb:test
+./gradlew :app:testDebugUnitTest :core:heos:test :core:avr:test :core:smb:test :core:data:testDebugUnitTest
 ./gradlew ktlintCheck :app:lintDebug   # both, or CI fails; ktlintFormat fixes the first
 ./gradlew assembleDebug
 ```
@@ -34,6 +34,11 @@ export JAVA_HOME="C:/Program Files/Android/Android Studio/jbr"
 `:core:heos`, `:core:avr` and `:core:smb` are pure JVM and build with no Android SDK at all;
 `settings.gradle.kts` gates `:app` and `:core:data` on an SDK being present. Keep the protocol
 modules Android-free - that gating is load-bearing for CI.
+
+The SDK is `/opt/android-sdk` (`ANDROID_HOME` is set). `local.properties` `sdk.dir` is absolute and
+gitignored, and Gradle prefers it over `ANDROID_HOME`, so a stale path there breaks the build - it
+once held a `C:/Users/...` path. The SDK has platforms 34 and 36 (`compileSdk` is 36) but no
+`emulator` or `system-images`; install them with `sdkmanager` before reaching for an AVD.
 
 ## Protocol facts that have already cost time
 
@@ -93,20 +98,53 @@ modules Android-free - that gating is load-bearing for CI.
 ## Releasing
 
 Bump `versionCode`/`versionName` in `app/build.gradle.kts`, add a `CHANGELOG` entry for that exact
-`versionName` in `AboutScreen.kt`, then `pwsh ./publish-release.ps1` (or the **Release** workflow).
+`versionName` in `AboutScreen.kt`, push to the default branch, then run the **Release** workflow.
 The changelog entry is the source for both the GitHub release notes and the in-app updater, and it
 is parsed by regex in two places that must stay in step - read
 [`.github/workflows/README-release.md`](.github/workflows/README-release.md) before touching either.
-`-DryRun` builds and prints the notes without publishing; use it.
+
+`publish-release.ps1` is the Windows-only local path (`gradlew.bat`, backslash paths,
+`apksigner.bat`); it cannot run on this machine even with `pwsh`. Use the workflow, dry run first:
+
+```sh
+gh workflow run release.yml --ref claude/android-smb-denon-player-9710bx -f dry_run=true
+gh run watch <run-id> --exit-status        # then repeat with dry_run=false to publish
+```
+
+The workflow refuses to run past its first check if a release for that version already exists, so a
+dry run only means something after the version bump is pushed. After publishing, download the APK
+and confirm `apksigner verify --print-certs` shows the fingerprint pinned in `release.yml`.
+
+For a local signed build, `keystore.properties` needs an absolute `storeFile`
+(`/workspace/android-denonmusic/release.keystore`); its `keytool` SHA-256 must match
+`EXPECTED_SIGNER` in `release.yml`, or no build can install over an existing one.
 
 ## Environment hazards
 
-The Bash tool here mangles some command strings: a literal `&` splits the command as if it were
-background jobs, and doubled backslashes collapse to one **even inside a quoted heredoc**. Both
-survive `printf` in a real shell, so it is the tool wrapper, not POSIX. Author file content with the
-Write/Edit tools instead of `cat > file << 'EOF'`, and put anything containing `&` (HEOS query
-strings, for instance) in a script file rather than inline.
+**Line endings are LF.** `.editorconfig` says `end_of_line = lf` and the index is LF throughout
+(`gradlew.bat` is the one CRLF file). The tree was once copied over from Windows as CRLF, which broke
+`./gradlew` (`#!/bin/sh\r` fails with "No such file or directory") and made an edit to a Kotlin file
+diff as a whole-file rewrite. If `git ls-files --eol` shows `i/lf w/crlf` again, convert the working
+files before editing or committing, not after.
 
-Most files in this repo are CRLF. Rewriting one with a script that reads with universal newlines and
-writes with `newline=''` silently converts it to LF across the whole file; pass `newline=''` on the
-read too, or just use Edit.
+**git needs three things it does not have by default here.** The checkout is owned by another uid, so
+git refuses it ("dubious ownership"); there is no `user.name`/`user.email`; and HTTPS pushes have no
+credentials even though `gh` is authenticated. Pass them per command instead of editing global config:
+
+```sh
+export GIT_CONFIG_COUNT=3 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/workspace/android-denonmusic \
+  GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1= \
+  GIT_CONFIG_KEY_2=credential.helper GIT_CONFIG_VALUE_2='!gh auth git-credential'
+export GIT_AUTHOR_NAME=Rob GIT_AUTHOR_EMAIL=robertlempriere@gmail.com   # the existing history's author
+export GIT_COMMITTER_NAME=Rob GIT_COMMITTER_EMAIL=robertlempriere@gmail.com
+```
+
+`git status` may also list files as modified when `git diff` is empty: stale stat data the filesystem
+won't let git refresh. Trust `git diff --quiet`, not the status list.
+
+**`ping` is not installed.** Check the receiver with a TCP connect to 23 and 1255 (Python's
+`socket` is enough). A connect succeeding does not rule out Home Assistant resetting the first command.
+
+The Bash tool on the old Windows machine mangled a literal `&` and doubled backslashes, even inside
+quoted heredocs. Re-tested on this Linux machine on 2026-09-26: neither happens, and heredocs are
+fine. Keep it in mind only if a command string comes out wrong for no reason.
