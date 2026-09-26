@@ -57,9 +57,13 @@ machine, most of this is already done. The table in
 - **`keystore.properties` and `local.properties` hold absolute paths.** They are valid only at the
   same path under the same user; check, don't assume.
 - **`gh` credentials and the emulator AVD do not sync.** Re-authenticate, recreate the AVD.
-- **Claude's memory directory does not sync.** It lives under the user profile and is keyed by the
-  project's path. Everything load-bearing from it has been moved into `CLAUDE.md`, so losing it
-  costs little.
+- **Claude's memory directory does not sync**, because it lives under the user profile rather than
+  in this tree. A copy is kept at `.claude/memory-backup/` - inside the repo, so it rides along with
+  the sync, and gitignored, so it never enters git. To restore it on the other machine, copy that
+  folder's contents to
+  `%USERPROFILE%\.claude\projects\C--Rob-sync-dev-claude-denonmusic\memory\`. That slug is derived
+  from the project's path, so it only matches if the repo lives at `C:\Rob\sync\dev\claude\denonmusic`
+  there too. Everything load-bearing is in `CLAUDE.md` regardless, so skipping this costs little.
 
 ## Open, if something is wanted next
 
