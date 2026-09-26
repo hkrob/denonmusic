@@ -72,11 +72,12 @@ private val CHANGELOG = listOf(
             "passwords are moved across on first launch - nothing needs re-entering.",
     ),
     "0.1.15" to listOf(
-        "Fixed the now-playing notification never appearing on Android 10 and later. It was " +
-            "started the wrong way for modern Android and went foreground without saying what " +
-            "kind of service it is, either of which the system refuses outright - silently, " +
-            "because the refusal then killed the service. If it is still refused, the " +
-            "notification now appears anyway, just without the guarantee that it stays.",
+        "Corrected how the now-playing notification starts on Android 10 and later: it was " +
+            "started the wrong way, and went foreground without saying what kind of service it " +
+            "is. If the system refuses it now, the notification appears anyway, just without the " +
+            "guarantee that it stays. (This was released believing it fixed the notification " +
+            "going missing on newer phones. It did not - the notification was appearing all " +
+            "along, in the media panel rather than the notification list. See 0.1.18.)",
     ),
     "0.1.14" to listOf(
         "The app now asks permission to show the now-playing notification on Android 13 and " +

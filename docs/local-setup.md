@@ -10,7 +10,7 @@ for the current state, and the last section for what happened most recently.
 
 ## Where the work stands
 
-**Shipping.** v0.1.14 (`versionCode` 15) is published to GitHub Releases and the in-app updater
+**Shipping.** v0.1.18 (`versionCode` 19) is published to GitHub Releases and the in-app updater
 offers it. (The version moves often; `app/build.gradle.kts` is the authority, not this line.) All six phases in [`plan.md`](plan.md) are done and verified end-to-end against the real
 AVR-X4500H. (A later "improvement plan", referenced by track letter further down this file, was
 never committed here - its Tracks A-D are all done, so nothing is lost by its absence; the sections
@@ -19,7 +19,7 @@ below record what each one produced.)
 - Every module in `settings.gradle.kts` is live: `:core:heos`, `:core:avr` and `:core:smb` are pure
   JVM, plus `:app` and `:core:data` when an Android SDK is present. Only `:feature:probe` is still
   commented out, and nothing wants it - `tools/probe.py` covers that ground.
-- **239 unit tests, 0 failures, 0 skipped.** ktlint and `:app:lintDebug` clean.
+- **244 unit tests, 0 failures, 0 skipped.** ktlint and `:app:lintDebug` clean.
 - Verified on real hardware: browse, all four `aid` queue actions, gapless album playback,
   force-stop-and-keep-playing, browse memory across a reinstall, the AVR panel, the SMB bridge
   fallback, the Now Playing technical panel with chain integrity, LAN control, and the
@@ -496,8 +496,8 @@ the Now Playing technical panel + chain-integrity indicator UI that consumes `:c
 folder-level format badges in Browse, and Phase 6 (bridge-mode fallback polish - the degraded
 `play_stream` path already exists from earlier testing but was never meant to be the primary path).
 
-> Superseded: everything in that "next up" list shipped in the sections below, **except**
-> `EncryptedSharedPreferences`, which is still outstanding. See the last section of this file.
+> Superseded: everything in that "next up" list has since shipped, `EncryptedSharedPreferences`
+> included (0.1.16). Nothing in it is outstanding.
 
 ## Plex DLNA as the primary source, and three real bugs it exposed
 
@@ -683,14 +683,16 @@ entry in `AboutScreen.kt`; the ones worth knowing as protocol or lifecycle facts
 
 ### Open questions left deliberately alone
 
-- **Does the receiver really free-run telemetry "roughly once a second"?** `AvrConnection`'s own doc
-  comment says it does. Tapping port 23 for 12 s produced **zero** unsolicited lines - but the unit
-  was in `PWSTANDBY`, which plausibly explains it by itself. Not enough to rewrite the comment
-  from. Re-check with something playing before either trusting or correcting it.
-- **Both passwords are still in plain DataStore.** `smbPassword` and `lanControlPassword` in
-  `SettingsRepository` are unencrypted preferences holding a real NAS account's credentials. The
-  `EncryptedSharedPreferences` migration flagged under "Continuing the branch" above is still the
-  oldest outstanding item in this repo.
+*Both of these were settled on 2026-09-25 - kept here because the answers are the interesting part.*
+
+- **Does the receiver really free-run telemetry "roughly once a second"?** ~~Unknown.~~ Measured:
+  no. The block (`SSINFAISSIG`/`SSINFAISFSV`/`CVFL`..`CVEND`/`MVMAX`/`DCAUTO`, about nine lines
+  inside 600ms) repeats roughly **every 15 seconds**, not every second, and is not reliably
+  unprompted - three separate 30-second taps that sent nothing, in standby and while playing, saw
+  no lines at all, while a connection that had sent one command saw a block every ~15s after. The
+  comment in `AvrConnection` now says this; the burst-window design it justifies is unchanged.
+- **Both passwords are still in plain DataStore.** ~~Outstanding.~~ Done in 0.1.16 - see the
+  encrypted-secrets note further down.
 
 ## `add_to_queue` is asynchronous, and says "Out of range" when it isn't (2026-09-25)
 
@@ -717,8 +719,68 @@ full before being refused. `QueueTargetResolver.collect` now returns `QueueColle
 `.TooMany` and gives up the moment the budget is blown. A subtree legitimately inside the limit is
 still walked in full, so a deep one still takes its time - only the refusals got faster.
 
-**Probing note:** `tools/probe.py`'s `heos` subcommand returns the interim "command under process"
-ack for any slow DLNA browse, so it shows an empty payload where the real answer follows a moment
-later. The app was fixed for this long ago (see
-[`heos-dlna-plex-jellyfin-conflict.md`](heos-dlna-plex-jellyfin-conflict.md)); the probe never was.
-Skip frames whose message contains `command under process` when scripting against it.
+**Probing note:** `tools/probe.py`'s `heos` subcommand used to return the interim "command under
+process" ack for any slow DLNA browse, showing an empty payload where the real answer followed a
+moment later - the same trap the app itself hit long before (see
+[`heos-dlna-plex-jellyfin-conflict.md`](heos-dlna-plex-jellyfin-conflict.md)). The probe was fixed
+too on 2026-09-25 and now skips those frames. Anything else scripted against this protocol needs to
+do the same.
+## The notification, the state tracker, and encrypted secrets (2026-09-25)
+
+A now-playing notification with transport controls, and the three things that had to change under
+it. Shipped across 0.1.12 to 0.1.18.
+
+- **`PlayerStateTracker` now owns the receiver's state**, not `PlayerViewModel`. A view model dies
+  with the screen, and the notification has to keep telling the truth after the last screen is
+  gone. The view model became a screen's view of that state plus the actions a screen can take, and
+  lost about 180 lines without a single screen changing - `PlayerUiState` and every field name
+  stayed put. `attach`/`detach` counts who needs live state (a screen, or the notification), so the
+  one resync loop stops when nobody does, and drops to a 60s tick when only the shade is watching.
+- **`aid=4` is not safe to follow with another add.** Measured: sent alone it replaces the queue and
+  plays; with a second add arriving straight after, *both* halves are lost - the old queue survives
+  and the new parts are merely appended, stopped. So a multi-part replace clears the queue, appends
+  every part with `aid=3`, then plays. Same asynchrony as the `eid=9` above.
+- **Both stored passwords are encrypted now** (0.1.16), in `EncryptedSharedPreferences` behind a
+  keystore-held key, with a one-time migration out of plain DataStore. Verified on a real phone: a
+  token set through the UI authenticates, survives a force-stop, and appears nowhere in the clear -
+  not in the encrypted file, where even the key names are encrypted, and not in DataStore.
+
+### Where the notification actually appears, which cost three releases
+
+It renders in the **system media panel, not the notification list**. On Samsung's One UI that is the
+bottom of the *second* pull-down, past the Quick Settings tiles. It had been working and being
+looked for in the wrong place, and three releases of fixes went out aimed at a fault that was not
+there.
+
+What that episode is worth remembering for:
+
+- **Diagnose before fixing.** `dumpsys notification` showed the record posted, `dumpsys
+  media_session` showed the session active, and the app's own Settings row said `RUNNING`, all
+  before anything was changed. Any one of those would have reframed the question.
+- **The emulator settles version-specific behaviour in one boot.** An API 36 AVD reproduced the
+  correct behaviour immediately, which is what turned "why is it broken" into "where does it
+  render". Reach for it first, not third.
+- One real bug did come out of it: the media session advertised `state=PLAYING` with `speed=0.0`,
+  a contradiction, so the card drew a dead progress bar. Speed is now 1 while playing and the
+  position comes from the receiver's own progress events.
+
+## Moving this to another machine
+
+`C:\Rob\sync` is a Resilio Sync share and its ignore list is the stock one, so the whole working
+tree replicates - including the files git deliberately does not carry. If the other machine syncs
+the same share to the same path, most of this is already done. Check rather than assume:
+
+| Thing | Carried by sync? | What to do |
+|---|---|---|
+| `release.keystore` | Yes, it is inside the tree | Irreplaceable - losing it means no more updates can be installed over an existing one. Confirm it arrived before relying on it. |
+| `keystore.properties` | Yes | `storeFile` is an absolute path *inside* the synced tree, so it stays valid at the same path and breaks at any other. A release build failing on a missing keystore is this line - it has happened before. |
+| `local.properties` | Yes | `sdk.dir` is an absolute path under one user's profile. Regenerate it rather than trusting it. |
+| `JAVA_HOME` | No | Must point at a JDK 17+; Android Studio's bundled JBR is the one used here. |
+| `gh` authentication | No | `gh auth login`. `publish-release.ps1` refuses to start without it. |
+| `.claude/settings.local.json` | Yes | Only a permission allowlist; nothing breaks without it. |
+| Claude's memory directory | No | It lives under the user profile, keyed by the project's path. The facts worth keeping have been moved into `CLAUDE.md` so this does not matter much. |
+| The emulator AVD | No | Recreate an API 36 image; it is the tool for anything version-specific. |
+
+Before trusting any of it, verify: `JAVA_HOME`, the SDK path, `gh auth status`, `ping 10.1.10.50`,
+`adb devices`, and the keystore fingerprint against `$ExpectedSigner` in `publish-release.ps1`.
+

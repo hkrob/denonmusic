@@ -47,12 +47,33 @@ modules Android-free - that gating is load-bearing for CI.
   inside that window is refused with `eid=9 Out of range` - the spec's "parameter out of range",
   which is not remotely what went wrong. `HeosClient.addToQueue` retries for this; don't add a
   second queueing path that doesn't.
+- **`aid=4` ("replace and play") is lost if another add follows it.** Sent alone it replaces the
+  queue and starts playing; with a second add arriving straight after, both the replace *and* the
+  play are dropped - the old queue survives and the new parts are merely appended, stopped. So a
+  multi-part replace clears the queue, appends each part with `aid=3`, then plays. Same underlying
+  asynchrony as the entry above.
 - **Check protocol behaviour against the receiver instead of the comments.** There is direct LAN
   access to the real unit at `10.1.10.50`, and `tools/probe.py <subcommand> <ip>` is the
   tool for it (standard library only). Several comments in this codebase were written from the spec
-  and turned out wrong; at least one is still unverified (see the end of `docs/local-setup.md`).
+  and turned out wrong, and two were corrected only after being measured - see `docs/local-setup.md`
+  for both. Assume a comment about receiver behaviour is a hypothesis until a tap says otherwise.
 - **Home Assistant's `denonavr` integration competes for the control ports.** If telnet:23 or
   HEOS:1255 reset instantly from here, that's usually why.
+
+## Android facts specific to this app
+
+- **`@Inject lateinit var` does not compile here.** Field injection fails this project's
+  Dagger/Kotlin pairing with "Unable to read Kotlin metadata due to unsupported metadata version".
+  Constructor injection where possible; `@EntryPoint` + `EntryPointAccessors` for the Application,
+  the Activity and the Service, which is what all three already do.
+- **The now-playing notification appears in the system media panel, not the notification list.** On
+  Samsung's One UI that is the bottom of the *second* pull-down. Three releases were once spent
+  "fixing" a notification that was working and being looked for in the wrong place. Before changing
+  anything, check `dumpsys notification`, `dumpsys media_session`, and the app's own
+  Settings -> NOTIFICATION row, which reports why it is not showing when it is not.
+- **An emulator settles version-specific behaviour in one boot.** The test phone here is old; most
+  of the rules that break a modern Android are not reachable on it. An API 36 AVD reproduced correct
+  behaviour immediately and reframed a three-release hunt. Reach for it first.
 
 ## Conventions
 
@@ -61,6 +82,9 @@ modules Android-free - that gating is load-bearing for CI.
 - For `MutableStateFlow` touched from more than one dispatcher, use `update {}`/`getAndUpdate {}`,
   not `value = value.copy(...)`. Careful with the implicit `it` when converting: inside
   `onFailure { }` it shadows the throwable.
+- A test that asserts on a fire-and-forget send must wait for it. `send()` returns once the bytes
+  are written, not once the fake server has read them; `AvrClientTest.awaitReceived` exists for
+  exactly this, and the two tests that skipped it were flaky until they used it.
 - Comments explain *why*, at the density of the surrounding code. The existing prose is deliberate;
   match it rather than adding a banner comment per function.
 - Never commit `release.keystore`, `keystore.properties` or `local.properties`, and don't paste
