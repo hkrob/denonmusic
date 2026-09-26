@@ -53,6 +53,10 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.20" to listOf(
+        "No behaviour changes - the same app as 0.1.19. The only change since then is to the " +
+            "project's own working notes, which are not part of the app.",
+    ),
     "0.1.19" to listOf(
         "No behaviour changes - this is the same app as 0.1.18, rebuilt so that releases can be " +
             "cut from the machine the project now lives on. The only edit you can see is in this " +
