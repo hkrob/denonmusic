@@ -48,6 +48,27 @@ export JAVA_HOME="C:/Program Files/Android/Android Studio/jbr"
   ports.** While it holds its connection, telnet:23 and HEOS:1255 from anywhere else get reset
   instantly. See the probe findings below for how to free it.
 
+### Picking this up on a different machine
+
+Git carries the project; it deliberately does not carry what makes a build signable or a release
+publishable. Before trusting the environment, check each of these:
+
+| Thing | Why it needs checking |
+|---|---|
+| `release.keystore` | Irreplaceable. Without the same key, no new build can install over an existing one - Android refuses it. Confirm the file is present before planning a release. |
+| `keystore.properties` | Holds an **absolute** `storeFile` path, so it is valid only where it was written. A release build failing on a missing keystore is almost always this line; it has happened here before. Check the `keytool` SHA-256 against `$ExpectedSigner` in `publish-release.ps1`. |
+| `local.properties` | Same problem: `sdk.dir` is absolute. Regenerate rather than trust. |
+| `JAVA_HOME` | Never carried. Must point at a JDK 17+; see "Building here" above. |
+| `gh` authentication | Never carried. `publish-release.ps1` refuses to start without it. |
+| An emulator image | Never carried. Recreate one - it is the tool for anything version-specific, and the physical test phone may be too old to reach the behaviour in question. |
+
+Verify with: `JAVA_HOME`, `gh auth status`, `ping 10.1.10.50`, `adb devices`, the keystore
+fingerprint, and a full `./gradlew ktlintCheck :app:lintDebug` plus the unit tests.
+
+Anything beyond that is specific to how a particular machine is set up, and is recorded outside
+this repo - see `docs/handoff-prompt.md`.
+
+
 ## Probe findings (2026-09-13, against 10.1.10.50)
 
 - **Home Assistant contention.** This receiver already has HA's `denonavr` integration
@@ -763,24 +784,3 @@ What that episode is worth remembering for:
 - One real bug did come out of it: the media session advertised `state=PLAYING` with `speed=0.0`,
   a contradiction, so the card drew a dead progress bar. Speed is now 1 while playing and the
   position comes from the receiver's own progress events.
-
-## Moving this to another machine
-
-`C:\Rob\sync` is a Resilio Sync share and its ignore list is the stock one, so the whole working
-tree replicates - including the files git deliberately does not carry. If the other machine syncs
-the same share to the same path, most of this is already done. Check rather than assume:
-
-| Thing | Carried by sync? | What to do |
-|---|---|---|
-| `release.keystore` | Yes, it is inside the tree | Irreplaceable - losing it means no more updates can be installed over an existing one. Confirm it arrived before relying on it. |
-| `keystore.properties` | Yes | `storeFile` is an absolute path *inside* the synced tree, so it stays valid at the same path and breaks at any other. A release build failing on a missing keystore is this line - it has happened before. |
-| `local.properties` | Yes | `sdk.dir` is an absolute path under one user's profile. Regenerate it rather than trusting it. |
-| `JAVA_HOME` | No | Must point at a JDK 17+; Android Studio's bundled JBR is the one used here. |
-| `gh` authentication | No | `gh auth login`. `publish-release.ps1` refuses to start without it. |
-| `.claude/settings.local.json` | Yes | Only a permission allowlist; nothing breaks without it. |
-| Claude's memory directory | No | It lives under the user profile, keyed by the project's path. The facts worth keeping have been moved into `CLAUDE.md` so this does not matter much. |
-| The emulator AVD | No | Recreate an API 36 image; it is the tool for anything version-specific. |
-
-Before trusting any of it, verify: `JAVA_HOME`, the SDK path, `gh auth status`, `ping 10.1.10.50`,
-`adb devices`, and the keystore fingerprint against `$ExpectedSigner` in `publish-release.ps1`.
-
