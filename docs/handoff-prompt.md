@@ -21,20 +21,22 @@ Read these first, in order:
      "Picking this up on a different machine" table in it.
 
 Then verify the environment before relying on it, and tell me what you find:
-  - JAVA_HOME points at a JDK 17+ (Android Studio's bundled JBR is what was used). Gradle fails
-    obscurely without it.
-  - local.properties sdk.dir is valid here - it's an absolute path and may be stale.
+  - JAVA_HOME points at a JDK 17+ (java -version says which). Gradle fails obscurely without it.
+  - local.properties sdk.dir is valid here - it's an absolute path and may be stale. It wins over
+    ANDROID_HOME, so a stale value breaks the build even when ANDROID_HOME is right.
   - gh auth status is authenticated.
-  - keystore.properties storeFile exists, and its keytool SHA-256 matches $ExpectedSigner in
-    publish-release.ps1. A mismatched key means no new build can install over an existing one.
-  - ping 10.1.10.50 reaches the receiver; adb devices lists a phone if one is attached.
+  - keystore.properties storeFile exists, and its keytool SHA-256 matches EXPECTED_SIGNER in
+    .github/workflows/release.yml. A mismatched key means no new build can install over an
+    existing one.
+  - 10.1.10.50 accepts TCP connections on 23 and 1255 (ping may not be installed); adb devices
+    lists a phone if one is attached.
   - ./gradlew ktlintCheck :app:lintDebug and the unit tests pass. CI runs lint too, so a green
     local test run alone is not enough.
 
 Two notes about tooling:
-  - CLAUDE.md records that the Bash tool on the previous machine mangled literal '&' and doubled
-    backslashes, even inside quoted heredocs. That was observed there, not necessarily here -
-    re-test it rather than assuming either way.
+  - git may refuse the checkout ("dubious ownership") and has no identity or HTTPS credentials
+    here; CLAUDE.md, under "Environment hazards", has the per-command environment settings that
+    avoid editing global config.
   - An emulator is the right tool for anything version-specific. The physical test phone is old
     and cannot reach most modern Android behaviour; assuming otherwise has cost releases before.
 

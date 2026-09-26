@@ -7,8 +7,8 @@ key never leaves encrypted repository secrets except inside the job that uses it
 
 ### 1. Generate a keystore (skip if you already have one)
 
-```powershell
-keytool -genkeypair -v -keystore release.keystore -alias denonmusic `
+```sh
+keytool -genkeypair -v -keystore release.keystore -alias denonmusic \
   -keyalg RSA -keysize 2048 -validity 10000
 ```
 
@@ -20,7 +20,7 @@ machine keeps it) stays out of git; it is the *backup* that has to live somewher
 Create `keystore.properties` alongside it (also gitignored) for local release builds:
 
 ```properties
-storeFile=C:/path/to/release.keystore
+storeFile=/absolute/path/to/release.keystore
 storePassword=...
 keyAlias=denonmusic
 keyPassword=...
@@ -31,23 +31,24 @@ fails on a missing keystore file usually means this line, not a broken signing s
 keystore before you point at it; the fingerprint has to be the one pinned in step 2, because
 Android will not install an update signed with a different key:
 
-```powershell
-keytool -list -v -keystore release.keystore -alias denonmusic | Select-String SHA256
+```sh
+keytool -list -v -keystore release.keystore -alias denonmusic | grep SHA256
 ```
 
 ### 2. Pin the signing certificate fingerprint
 
 Already done for the current keystore: `EXPECTED_SIGNER` in `.github/workflows/release.yml` and
-`$ExpectedSigner` in `publish-release.ps1` are both set to
+`$ExpectedSigner` in the Windows-only `publish-release.ps1` are both set to
 `7c50709e598856a9a80a75afff9dfb60f1b8d4f682e7ee2bef036bafa79ed8ea`. Re-do this step only if the
 key is ever rotated.
 
 `release.yml` refuses to trust an APK signed with any key but the one you intend - print the
-fingerprint once and hardcode it as `EXPECTED_SIGNER` in `.github/workflows/release.yml`:
+fingerprint once and hardcode it as `EXPECTED_SIGNER` in `.github/workflows/release.yml`. The
+`keytool` command in step 1 prints it as colon-separated hex; `EXPECTED_SIGNER` is the same digits,
+lower-case, without the colons. To read it off a built APK instead:
 
-```powershell
-keytool -exportcert -alias denonmusic -keystore release.keystore -storepass <storePassword> |
-  & "$env:ANDROID_HOME\build-tools\<version>\apksigner.bat" verify --print-certs -
+```sh
+$ANDROID_HOME/build-tools/<version>/apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
 ```
 
 Or more simply, since the workflow already prints it: run the workflow once with `dry_run` before
@@ -59,21 +60,19 @@ the workflow file, not stored as a secret.
 
 ### 3. Set the four keystore secrets
 
-```powershell
-cd C:\path\to\denonmusic              # the folder holding release.keystore
+```sh
+cd /path/to/denonmusic                 # the folder holding release.keystore
 gh auth status                         # must be authenticated
 
-gh secret set RELEASE_KEYSTORE_B64 --repo hkrob/denonmusic `
-  --body ([Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path .\release.keystore))))
+base64 -w0 release.keystore | gh secret set RELEASE_KEYSTORE_B64 --repo hkrob/denonmusic
 
 gh secret set RELEASE_STORE_PASSWORD --repo hkrob/denonmusic
 gh secret set RELEASE_KEY_ALIAS      --repo hkrob/denonmusic
 gh secret set RELEASE_KEY_PASSWORD   --repo hkrob/denonmusic
 ```
 
-`Resolve-Path` matters: .NET methods such as `ReadAllBytes` resolve a relative path against the
-process working directory, which is not necessarily the directory PowerShell has `cd`-ed to.
-Passing a bare `"release.keystore"` can silently read from the wrong place or throw.
+`-w0` keeps the secret on one line; the workflow's `base64 -d` would cope with wrapped output too.
+Setting a secret overwrites the existing one, so do not run these to "check" them.
 
 The last three commands prompt for the value, so it never reaches your shell history. They must
 match the `storePassword`, `keyAlias` and `keyPassword` in your local `keystore.properties`.
@@ -89,20 +88,28 @@ only, never values.
    notes from it and fails if it is missing or empty.
 
    That list is parsed out of Kotlin source by regex, in **two places that must stay in step**:
-   `release.yml` (Python) and `publish-release.ps1` (PowerShell). A bullet too long for one line is
+   `release.yml` (Python) and `publish-release.ps1` (PowerShell, Windows-only). A bullet too long for one line is
    written as a string concatenation, `"first half " + "second half"`, and both parsers collapse
    those joins before matching literals - without that, every continuation line becomes a bullet of
    its own and the notes ship split mid-sentence, which is exactly how v0.1.6 and v0.1.7 went out.
-   If you touch either parser, run `publish-release.ps1 -DryRun` (or the workflow with `dry_run`)
-   and read the notes it prints before publishing.
+   If you touch either parser, run the workflow with `dry_run` (or `publish-release.ps1 -DryRun` on
+   Windows) and read the notes it prints before publishing.
 3. Merge to this repo's default branch (`claude/android-smb-denon-player-9710bx` as of writing -
    `publish-release.ps1` checks it explicitly; update `$ReleaseBranch` there if it's ever renamed).
-4. Run the **Release** workflow (`workflow_dispatch`), or push a `v<versionName>` tag.
+4. Run the **Release** workflow (`workflow_dispatch`), or push a `v<versionName>` tag:
 
-Tick **dry_run** to build, test and check the signature without publishing.
+   ```sh
+   gh workflow run release.yml --ref claude/android-smb-denon-player-9710bx -f dry_run=true
+   gh run watch <run-id> --exit-status      # then repeat with dry_run=false to publish
+   ```
 
-Or from a machine with `gh` and a JDK, `publish-release.ps1` does the same thing locally in one
-command (see its own header comment).
+`dry_run` builds, tests and checks the signature without publishing. It only means something once
+the version bump is pushed: while a release for the current version exists, the workflow stops at
+its first check, even as a dry run.
+
+`publish-release.ps1` does the same thing locally in one command, but it is Windows-only
+(`gradlew.bat`, backslash paths, `apksigner.bat`) and cannot run on Linux even with `pwsh`. On Linux
+the workflow is the release path.
 
 ## What the workflow refuses to do
 

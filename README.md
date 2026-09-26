@@ -54,9 +54,8 @@ JDK 17+ machine with no Android SDK installed:
 ```
 
 The Android Gradle plugin needs JDK 17 or newer. If your system default is older, point `JAVA_HOME`
-at Android Studio's bundled JBR - on Windows that is
-`C:/Program Files/Android/Android Studio/jbr` - or Gradle fails during startup rather than with
-anything that names the real problem.
+at a 17+ JDK (for example `/usr/lib/jvm/temurin-21-jdk-amd64`, or Android Studio's bundled JBR) or
+Gradle fails during startup rather than with anything that names the real problem.
 
 Style is enforced by one ktlint config shared with the IDE, so `./gradlew ktlintCheck` and your
 editor agree; rules live in `.editorconfig`.
@@ -123,10 +122,10 @@ attaching it to an issue.
 ## Releases and in-app updates
 
 Versioned releases are published to GitHub Releases and the app checks there for updates itself
-(About tab) - see `.github/workflows/README-release.md` for the full one-time signing setup and
-`publish-release.ps1` for the one-command local publish path. Briefly: bump `versionCode`/
-`versionName` in `app/build.gradle.kts`, add a changelog entry in `AboutScreen.kt`, then either run
-the **Release** GitHub Action or `pwsh ./publish-release.ps1`.
+(About tab) - see `.github/workflows/README-release.md` for the full one-time signing setup.
+Briefly: bump `versionCode`/`versionName` in `app/build.gradle.kts`, add a changelog entry in
+`AboutScreen.kt`, push, then run the **Release** GitHub Action
+(`gh workflow run release.yml --ref <default-branch> -f dry_run=true` first, then `dry_run=false`).
 
 The keystore is never committed (`*.keystore`/`*.jks` are gitignored) and lives only as encrypted
 repository secrets during a build - the linked doc covers that one-time setup, which is already in

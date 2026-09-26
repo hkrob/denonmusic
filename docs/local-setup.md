@@ -27,23 +27,26 @@ below record what each one produced.)
 
 ### Building here
 
-The Android Gradle plugin needs JDK 17+ and this machine's default `java` is 11, so `JAVA_HOME` has
-to point at Android Studio's bundled JBR or Gradle fails before it does anything:
+The project now lives on Linux (`/workspace/android-denonmusic`); it was developed on Windows up to
+v0.1.18, which is why the session log below mentions Windows paths and tools. The Android Gradle
+plugin needs JDK 17+, so `JAVA_HOME` has to point at one or Gradle fails before it does anything.
+Here it is already Temurin 21, and the SDK is `/opt/android-sdk`:
 
 ```sh
-export JAVA_HOME="C:/Program Files/Android/Android Studio/jbr"
-./gradlew :app:testDebugUnitTest :core:heos:test :core:avr:test :core:smb:test
-./gradlew ktlintCheck
+java -version                          # 17 or newer
+./gradlew :app:testDebugUnitTest :core:heos:test :core:avr:test :core:smb:test :core:data:testDebugUnitTest
+./gradlew ktlintCheck :app:lintDebug
 ./gradlew :app:assembleDebug
 ```
 
 ### Local-machine gotchas
 
-- **`keystore.properties` has pointed at a path that no longer exists** (`C:/rob/local/dev/...`),
-  which fails `assembleRelease` with a missing-file error. Both it and `release.keystore` live at
-  the repo root and are gitignored; check `storeFile` first if a release build won't sign. Before
-  pointing it anywhere new, confirm the fingerprint with `keytool` - it has to match
-  `$ExpectedSigner` in `publish-release.ps1`, or the APK will not install over an existing copy.
+- **`keystore.properties` has pointed at a path that no longer exists** (`C:/...` on the Windows
+  machine), which fails `assembleRelease` with a missing-file error. Both it and `release.keystore`
+  live at the repo root and are gitignored; `storeFile` should be
+  `/workspace/android-denonmusic/release.keystore`. Before pointing it anywhere new, confirm the
+  fingerprint with `keytool` - it has to match `EXPECTED_SIGNER` in `.github/workflows/release.yml`,
+  or the APK will not install over an existing copy.
 - **Home Assistant's `denonavr` integration (`connaught`) competes for the receiver's control
   ports.** While it holds its connection, telnet:23 and HEOS:1255 from anywhere else get reset
   instantly. See the probe findings below for how to free it.
@@ -56,14 +59,15 @@ publishable. Before trusting the environment, check each of these:
 | Thing | Why it needs checking |
 |---|---|
 | `release.keystore` | Irreplaceable. Without the same key, no new build can install over an existing one - Android refuses it. Confirm the file is present before planning a release. |
-| `keystore.properties` | Holds an **absolute** `storeFile` path, so it is valid only where it was written. A release build failing on a missing keystore is almost always this line; it has happened here before. Check the `keytool` SHA-256 against `$ExpectedSigner` in `publish-release.ps1`. |
+| `keystore.properties` | Holds an **absolute** `storeFile` path, so it is valid only where it was written. A release build failing on a missing keystore is almost always this line; it has happened here before. Check the `keytool` SHA-256 against `EXPECTED_SIGNER` in `.github/workflows/release.yml`. |
 | `local.properties` | Same problem: `sdk.dir` is absolute. Regenerate rather than trust. |
 | `JAVA_HOME` | Never carried. Must point at a JDK 17+; see "Building here" above. |
-| `gh` authentication | Never carried. `publish-release.ps1` refuses to start without it. |
-| An emulator image | Never carried. Recreate one - it is the tool for anything version-specific, and the physical test phone may be too old to reach the behaviour in question. |
+| `gh` authentication | Never carried. The Release workflow is dispatched with `gh`, and `gh` is also what git's HTTPS pushes borrow credentials from here. |
+| An emulator image | Never carried, and the SDK at `/opt/android-sdk` has no `emulator` or `system-images`; install them with `sdkmanager`. It is the tool for anything version-specific, and the physical test phone may be too old to reach the behaviour in question. |
 
-Verify with: `JAVA_HOME`, `gh auth status`, `ping 10.1.10.50`, `adb devices`, the keystore
-fingerprint, and a full `./gradlew ktlintCheck :app:lintDebug` plus the unit tests.
+Verify with: `JAVA_HOME`, `gh auth status`, a TCP connect to `10.1.10.50` on 23 and 1255 (`ping` may
+not be installed), `adb devices`, the keystore fingerprint, and a full
+`./gradlew ktlintCheck :app:lintDebug` plus the unit tests.
 
 Anything beyond that is specific to how a particular machine is set up, and is recorded outside
 this repo - see `docs/handoff-prompt.md`.
