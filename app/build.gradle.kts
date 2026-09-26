@@ -39,8 +39,8 @@ android {
         applicationId = "com.denonmusic.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 19
-        versionName = "0.1.18"
+        versionCode = 20
+        versionName = "0.1.19"
 
         buildConfigField(
             "String",

@@ -53,6 +53,11 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.19" to listOf(
+        "No behaviour changes - this is the same app as 0.1.18, rebuilt so that releases can be " +
+            "cut from the machine the project now lives on. The only edit you can see is in this " +
+            "list: the 0.1.15 entry now says plainly that it did not fix the missing notification.",
+    ),
     "0.1.18" to listOf(
         "The now-playing controls now show a real progress bar with elapsed and total time. " +
             "They report playback speed correctly too, which they did not before - it said " +
