@@ -191,6 +191,22 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * For [com.denonmusic.app.MainActivity]'s hardware volume keys: relative rather than absolute,
+     * since a key press only knows "up" or "down", not a target level. Updates [tracker]
+     * optimistically before the HEOS round trip, not after like [setVolume] does - holding the key
+     * auto-repeats faster than a `set_volume` reply comes back, and reading the level from [tracker]
+     * only once it's confirmed would have every press in that window compute from the same stale
+     * value instead of stacking.
+     */
+    fun adjustVolume(step: Int) {
+        val client = session.heosClient ?: return
+        val pid = tracker.state.value.pid ?: return
+        val level = ((tracker.state.value.volume ?: 0) + step).coerceIn(0, 100)
+        tracker.update { it.copy(volume = level) }
+        viewModelScope.launch { runCatching { client.setVolume(pid, level) } }
+    }
+
     fun setRepeat(mode: RepeatMode) {
         if (tracker.state.value.isBridgeModeActive) return bridgeQueueController.setRepeat(mode)
         val client = session.heosClient ?: return
