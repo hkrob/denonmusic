@@ -788,3 +788,54 @@ What that episode is worth remembering for:
 - One real bug did come out of it: the media session advertised `state=PLAYING` with `speed=0.0`,
   a contradiction, so the card drew a dead progress bar. Speed is now 1 while playing and the
   position comes from the receiver's own progress events.
+
+## No seek command on this receiver's HEOS CLI (2026-09-27)
+
+Asked to make the Now Playing progress bar seekable. Before writing any UI, checked whether the
+receiver's HEOS module can actually seek within a track - the progress bar's `cur_pos`/`duration`
+come from `player_now_playing_progress` events, but nothing in this codebase had ever sent it a
+position.
+
+Tried four plausible command/param spellings against the real AVR-X4500H (pid `314749401`,
+firmware `3.139.173`), each over `tools/probe.py heos`:
+
+```
+player/set_progress?pid=314749401&position_ms=60000
+player/set_progress?pid=314749401&position=60000
+player/seek?pid=314749401&position_ms=60000
+player/set_position?pid=314749401&position_ms=60000
+```
+
+All four came back `eid=1&text=Command not recognized` - not `eid=9` ("parameter out of range",
+the error a real command gives for a bad argument, see the `browse/add_to_queue` entry above).
+`eid=1` means the command name itself isn't in this firmware's dispatch table at all. **This HEOS
+CLI has no seek-to-position command** - not a wrong guess at the spelling, an absence. That much
+still stands.
+
+**The conclusion drawn from it - "nothing to build, the progress bar stays read-only" - did not.**
+Told the native HEOS app can seek, which it can. The HEOS CLI (port 1255) is not the only control
+surface this receiver exposes: it also runs a completely ordinary UPnP `MediaRenderer`, found by
+`GET`ting its own device description, `http://10.1.10.50:60006/upnp/desc/aios_device/aios_device.xml`
+(SSDP itself doesn't reach the receiver from this dev sandbox - no multicast, and a unicast
+M-SEARCH straight at its IP got no reply either, both consistent with the "no ping" UDP restriction
+already noted below; the description URL is plain TCP/HTTP and works fine). That XML advertises a
+standard `urn:schemas-upnp-org:service:AVTransport:1` at
+`/upnp/control/renderer_dvc/AVTransport`, whose SCPD declares a `Seek` action (`Unit=REL_TIME`,
+`Target` as `H:MM:SS`, no leading zero on the hour - `0:01:30` for 90s). Confirmed working
+end to end: `GetPositionInfo` before/after a `Seek` SOAP call showed `RelTime` jump from `00:00:01`
+to `00:01:00` exactly as asked, on the real track then playing (`With This Tear`, matching what
+HEOS itself reported as now-playing).
+
+One more thing worth recording since it shapes the implementation: a `Seek` does **not** produce an
+immediate `player_now_playing_progress` push on the HEOS event socket (tapped both ports through
+the seek to check). The next progress event afterward does carry the corrected position, but only
+on that event's own ~5s cadence - so [`PlayerViewModel.seekTo`][seekto] updates the on-screen
+position optimistically rather than waiting for HEOS to confirm it, the same reasoning as
+`adjustVolume`.
+
+[seekto]: ../app/src/main/kotlin/com/denonmusic/app/player/PlayerViewModel.kt
+
+The standing advice is still right, just cuts both ways: a negative result against one control
+surface of this receiver (the HEOS CLI) is not a negative result against all of them. If a future
+firmware changes either surface, re-probe rather than trusting this note - see the "check protocol
+behaviour against the receiver" rule at the top of this file's advice in CLAUDE.md.

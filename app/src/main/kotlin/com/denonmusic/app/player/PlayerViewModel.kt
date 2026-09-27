@@ -207,6 +207,25 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch { runCatching { client.setVolume(pid, level) } }
     }
 
+    /**
+     * The HEOS CLI has no seek command of its own (confirmed live - see docs/local-setup.md), so this
+     * goes through the receiver's UPnP `AVTransport` service instead of [session]'s HEOS client - see
+     * [com.denonmusic.avr.AvTransportClient].
+     *
+     * Updates [tracker]'s displayed position immediately rather than waiting for confirmation, for
+     * the same reason [adjustVolume] does: HEOS's own `player_now_playing_progress` push event that
+     * would otherwise correct it only arrives on its own several-second cadence, not right after the
+     * seek, so the slider would sit wherever it was dropped for that whole window otherwise.
+     */
+    fun seekTo(positionMillis: Long) {
+        val transport = avrSession.avTransportClient ?: return
+        val duration = tracker.state.value.progress.durationMillis
+        if (duration <= 0) return
+        val clamped = positionMillis.coerceIn(0, duration)
+        tracker.update { it.copy(progress = it.progress.copy(positionMillis = clamped)) }
+        viewModelScope.launch { runCatching { transport.seek(clamped) } }
+    }
+
     fun setRepeat(mode: RepeatMode) {
         if (tracker.state.value.isBridgeModeActive) return bridgeQueueController.setRepeat(mode)
         val client = session.heosClient ?: return

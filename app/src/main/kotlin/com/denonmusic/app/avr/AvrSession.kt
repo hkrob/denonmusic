@@ -1,5 +1,6 @@
 package com.denonmusic.app.avr
 
+import com.denonmusic.avr.AvTransportClient
 import com.denonmusic.avr.AvrClient
 import com.denonmusic.avr.AvrConnection
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +37,7 @@ class AvrSession @Inject constructor() {
 
     private var connection: AvrConnection? = null
     private var client: AvrClient? = null
+    private var transportClient: AvTransportClient? = null
     private var sessionJob: kotlinx.coroutines.Job? = null
 
     private val _state = MutableStateFlow<AvrConnectionState>(AvrConnectionState.Disconnected)
@@ -44,7 +46,16 @@ class AvrSession @Inject constructor() {
     val avrClient: AvrClient? get() = client
     val events: SharedFlow<String>? get() = connection?.events
 
+    /**
+     * Talks to the receiver's UPnP `AVTransport` service (port 60006) rather than the telnet port
+     * [connection] owns, so it doesn't need that socket to be connected - just the host. Kept here
+     * anyway rather than resolved fresh per call, since [AvrSession] is already the one place that
+     * tracks which host this receiver is currently at.
+     */
+    val avTransportClient: AvTransportClient? get() = transportClient
+
     fun start(host: String) {
+        transportClient = AvTransportClient(host)
         if (_state.value.let { it is AvrConnectionState.Connected && it.host == host }) return
         sessionJob?.cancel()
         sessionJob = scope.launch { runSession(host) }
@@ -55,6 +66,7 @@ class AvrSession @Inject constructor() {
         sessionJob = null
         connection?.shutdown()
         client = null
+        transportClient = null
         _state.value = AvrConnectionState.Disconnected
     }
 

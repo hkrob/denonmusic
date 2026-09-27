@@ -53,6 +53,11 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.23" to listOf(
+        "The Now Playing progress bar can now be dragged to seek within a track, over the " +
+            "receiver's own UPnP transport control - the HEOS network protocol this app otherwise " +
+            "uses has no seek command of its own.",
+    ),
     "0.1.22" to listOf(
         "The phone's hardware volume keys now control the receiver's volume while the app is " +
             "open, instead of the phone's own (silent) media volume.",

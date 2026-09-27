@@ -34,6 +34,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -155,7 +158,7 @@ fun NowPlayingScreen(playerViewModel: PlayerViewModel, onBack: () -> Unit) {
                 }
             }
 
-            ProgressRow(state)
+            ProgressRow(state, onSeek = playerViewModel::seekTo)
 
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
@@ -237,26 +240,59 @@ fun NowPlayingScreen(playerViewModel: PlayerViewModel, onBack: () -> Unit) {
     }
 }
 
+/**
+ * A draggable [Slider] once the track's duration is known, so the thumb has a real range to move
+ * across; otherwise the old read-only bar, since a slider over a 0-width range has nothing to drag.
+ *
+ * [onSeek] only fires on release ([Slider]'s `onValueChangeFinished`), not on every frame of the
+ * drag - each call is a real network round trip to the receiver (see
+ * [com.denonmusic.app.player.PlayerViewModel.seekTo]), and firing it continuously while dragging
+ * would flood the connection and fight the thumb with the position [state] keeps reporting back
+ * mid-drag. While dragging, the thumb tracks the gesture itself ([dragPositionMillis]) rather than
+ * [state]'s own position, which otherwise keeps ticking forward underneath the finger a second at a
+ * time and fights the drag.
+ */
 @Composable
-private fun ProgressRow(state: PlayerUiState) {
+private fun ProgressRow(state: PlayerUiState, onSeek: (Long) -> Unit) {
     val progress = state.progress
+    val durationMillis = progress.durationMillis
+    var isDragging by remember { mutableStateOf(false) }
+    var dragPositionMillis by remember { mutableStateOf(0L) }
+    val displayedPositionMillis = if (isDragging) dragPositionMillis else progress.positionMillis
+
     Column(modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
-        Box(modifier = Modifier.fillMaxWidth().bevel(inset = true).padding(2.dp)) {
-            val fraction = if (progress.durationMillis > 0) {
-                (progress.positionMillis.toFloat() / progress.durationMillis).coerceIn(0f, 1f)
-            } else {
-                0f
-            }
-            LinearProgressIndicator(
-                progress = { fraction },
-                modifier = Modifier.fillMaxWidth().height(6.dp),
-                color = Winamp.Green,
-                trackColor = Winamp.Panel,
+        if (durationMillis > 0) {
+            Slider(
+                value = displayedPositionMillis.toFloat().coerceIn(0f, durationMillis.toFloat()),
+                onValueChange = {
+                    isDragging = true
+                    dragPositionMillis = it.toLong()
+                },
+                onValueChangeFinished = {
+                    onSeek(dragPositionMillis)
+                    isDragging = false
+                },
+                valueRange = 0f..durationMillis.toFloat(),
+                colors = SliderDefaults.colors(
+                    thumbColor = Winamp.Green,
+                    activeTrackColor = Winamp.Green,
+                    inactiveTrackColor = Winamp.BevelLight,
+                ),
+                modifier = Modifier.fillMaxWidth(),
             )
+        } else {
+            Box(modifier = Modifier.fillMaxWidth().bevel(inset = true).padding(2.dp)) {
+                LinearProgressIndicator(
+                    progress = { 0f },
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = Winamp.Green,
+                    trackColor = Winamp.Panel,
+                )
+            }
         }
         Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(progress.positionMillis.toClock(), style = Winamp.smallStyle)
-            Text(progress.durationMillis.toClock(), style = Winamp.smallStyle)
+            Text(displayedPositionMillis.toClock(), style = Winamp.smallStyle)
+            Text(durationMillis.toClock(), style = Winamp.smallStyle)
         }
     }
 }
