@@ -53,6 +53,10 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.24" to listOf(
+        "Seeking now also works from the lock screen and Bluetooth/Android Auto media controls, " +
+            "not just the in-app progress bar.",
+    ),
     "0.1.23" to listOf(
         "The Now Playing progress bar can now be dragged to seek within a track, over the " +
             "receiver's own UPnP transport control - the HEOS network protocol this app otherwise " +

@@ -93,7 +93,20 @@ class NowPlayingService : Service() {
         // without this the shade would be a snapshot of whatever was true when the app closed.
         tracker.attach(fromUi = false)
         createChannel()
-        mediaSession = MediaSessionCompat(this, "DenonMusic").apply { isActive = true }
+        mediaSession = MediaSessionCompat(this, "DenonMusic").apply {
+            isActive = true
+            // Lock screen, Bluetooth and Android Auto all scrub through this callback rather than a
+            // notification action - there's no PendingIntent for "drag to position", only a reported
+            // target in milliseconds. Goes through the tracker, same as the in-app slider, so both
+            // paths share one optimistic-update rule - see PlayerStateTracker.seekTo.
+            setCallback(
+                object : MediaSessionCompat.Callback() {
+                    override fun onSeekTo(pos: Long) {
+                        scope.launch { tracker.seekTo(pos) }
+                    }
+                },
+            )
+        }
         scope.launch {
             notifier.snapshot.collect { snapshot ->
                 if (snapshot.isEmpty) stopSelf() else show(snapshot)
@@ -276,7 +289,8 @@ class NowPlayingService : Service() {
                 .setActions(
                     PlaybackStateCompat.ACTION_PLAY_PAUSE or
                         PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                        PlaybackStateCompat.ACTION_STOP,
+                        PlaybackStateCompat.ACTION_STOP or
+                        PlaybackStateCompat.ACTION_SEEK_TO,
                 )
                 // Speed must be 1 while playing. It was 0 here - meaning "playing, but the
                 // clock is stopped" - on the theory that the receiver owns the clock and this app

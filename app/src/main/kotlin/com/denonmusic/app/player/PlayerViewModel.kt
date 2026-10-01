@@ -208,22 +208,12 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
-     * The HEOS CLI has no seek command of its own (confirmed live - see docs/local-setup.md), so this
-     * goes through the receiver's UPnP `AVTransport` service instead of [session]'s HEOS client - see
-     * [com.denonmusic.avr.AvTransportClient].
-     *
-     * Updates [tracker]'s displayed position immediately rather than waiting for confirmation, for
-     * the same reason [adjustVolume] does: HEOS's own `player_now_playing_progress` push event that
-     * would otherwise correct it only arrives on its own several-second cadence, not right after the
-     * seek, so the slider would sit wherever it was dropped for that whole window otherwise.
+     * See [PlayerStateTracker.seekTo] - the logic lives there now, shared with
+     * [com.denonmusic.app.notification.NowPlayingService] so a lock-screen scrub takes the same path
+     * as this screen's own slider.
      */
     fun seekTo(positionMillis: Long) {
-        val transport = avrSession.avTransportClient ?: return
-        val duration = tracker.state.value.progress.durationMillis
-        if (duration <= 0) return
-        val clamped = positionMillis.coerceIn(0, duration)
-        tracker.update { it.copy(progress = it.progress.copy(positionMillis = clamped)) }
-        viewModelScope.launch { runCatching { transport.seek(clamped) } }
+        viewModelScope.launch { tracker.seekTo(positionMillis) }
     }
 
     fun setRepeat(mode: RepeatMode) {

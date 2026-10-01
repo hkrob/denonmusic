@@ -266,6 +266,29 @@ class PlayerStateTracker @Inject constructor(
         bitPerfectPolicyController.applyStored(avrSession.avrClient)
     }
 
+    /**
+     * The HEOS CLI has no seek command of its own (confirmed live - see docs/local-setup.md), so this
+     * goes through the receiver's UPnP `AVTransport` service instead - see
+     * [com.denonmusic.avr.AvTransportClient].
+     *
+     * Lives here rather than on [PlayerViewModel] alone so [NowPlayingService]'s media-session
+     * callback can reuse it: lock-screen and Bluetooth scrubbing call this the same way the in-app
+     * slider does, through the one state owner both have a reference to.
+     *
+     * Updates the displayed position immediately rather than waiting for confirmation, for the same
+     * reason [PlayerViewModel.adjustVolume] does: HEOS's own `player_now_playing_progress` push event
+     * that would otherwise correct it only arrives on its own several-second cadence, not right after
+     * the seek, so the slider would sit wherever it was dropped for that whole window otherwise.
+     */
+    suspend fun seekTo(positionMillis: Long) {
+        val transport = avrSession.avTransportClient ?: return
+        val duration = _state.value.progress.durationMillis
+        if (duration <= 0) return
+        val clamped = positionMillis.coerceIn(0, duration)
+        _state.update { it.copy(progress = it.progress.copy(positionMillis = clamped)) }
+        runCatching { transport.seek(clamped) }
+    }
+
     suspend fun refreshQueue(pid: String) {
         val client = session.heosClient ?: return
         val items = runCatching { client.getQueue(pid) }.getOrNull().orEmpty()
