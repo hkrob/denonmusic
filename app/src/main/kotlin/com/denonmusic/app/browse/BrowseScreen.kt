@@ -163,8 +163,12 @@ fun BrowseScreen(viewModel: BrowseViewModel = hiltViewModel()) {
                     }
                     // sid 1024 (the only queueable source) answered browse/get_search_criteria with an
                     // empty payload - confirmed against the real receiver, so it has no server-side
-                    // search to fall back on. This scrolls the already-fetched listing instead, which
-                    // solves the same "find an artist in a long list" problem without a round trip.
+                    // search to fall back on, and the whole-library client-side index in
+                    // com.denonmusic.app.search needs an explicit build step and finds anywhere in the
+                    // library, not just this one open folder. This scrolls the already-fetched listing
+                    // instead, which solves the narrower "find an artist in a long list" problem for
+                    // free - no index to build, no round trip - so it stays alongside Search rather
+                    // than being replaced by it.
                     if (state.items.size > JUMP_INDEX_MIN_ITEMS) {
                         AlphabetJumpIndex(
                             onLetterSelected = { letter ->

@@ -839,3 +839,77 @@ The standing advice is still right, just cuts both ways: a negative result again
 surface of this receiver (the HEOS CLI) is not a negative result against all of them. If a future
 firmware changes either surface, re-probe rather than trusting this note - see the "check protocol
 behaviour against the receiver" rule at the top of this file's advice in CLAUDE.md.
+
+## Whole-library search, and what a real Plex tree does to a naive crawl (2026-10-02)
+
+The [2026-09-21 search probe](#search-probed-against-real-hardware-2026-09-21-not-usable-jump-index-stays-the-answer)
+above still stands exactly as written - `browse/search` is broken on this receiver's Plex-DLNA
+integration, not a client bug. What changed is the conclusion drawn from it: "no protocol-level
+search, jump-index stays the answer" assumed search had to mean asking the receiver. It doesn't.
+[`LibraryIndexer`](../core/heos/src/main/kotlin/com/denonmusic/heos/LibraryIndexer.kt) instead walks
+the whole browse tree client-side once, into a Room-cached index
+([`SearchIndexRepository`](../app/src/main/kotlin/com/denonmusic/app/search/SearchIndexRepository.kt))
+that a query then runs against with one SQLite `LIKE` - no receiver round trip per keystroke, no
+reliance on a search command that doesn't work.
+
+A naive version of that walk - recurse into every container, no filtering - was tried first against
+the real AVR-X4500H and was not just slow but **wrong**, in two ways only visible on an actual Plex
+library rather than the tidy tree a fake server test would serve:
+
+- The aggregate "Local Music" source's Plex entry has a **Video** library as a sibling of **Music**,
+  itself a full browsable tree (`By Starring Actor`, `By Country`, `TV Shows`, `Movies`). A
+  depth-first walk that visits it before Music burns its entire run on actor and movie folders -
+  measured: 400 `browse/browse` calls, 52 seconds, zero tracks found, the walk still inside `By
+  Starring Actor`. Nothing in the protocol distinguishes Video from Music at the point the walk has
+  to decide whether to descend - both come back as plain `"type":"container"` rows - so this can only
+  be caught by name.
+- Once inside the real music library, Plex offers **eight parallel views of the identical content**:
+  `All Artists`, `By Album`, `By Genre`, `By Decade`, `By Year`, `By Collection`, `Recently Added`,
+  `By Folder`. Walking all eight indexes every track up to eight times over.
+
+`LibraryIndexer` now skips known non-music branches by name (Video, Photos, and Plex's own
+Channels/queue/preferences/shared-library UI nodes) and, when a level offers several of the known
+parallel views at once, walks exactly **one** of them - `By Folder` preferred, since it mirrors the
+filesystem 1:1 and so is the only one of the eight that cannot itself be a second, different listing
+of a track already found down another view. That is a structural argument, not a measured one: an
+early probe that happened to walk two views in full (`All Artists`, then partway into `By Album`)
+still came back with `distinct mids == track rows`, which looks like "no duplicates" but isn't
+necessarily - it's equally consistent with Plex minting a different `mid` for the same track
+depending which view found it, which this app's mid-keyed data has no way to tell apart from a real
+duplicate. Walking exactly one view is what actually prevents the problem, by construction; it is
+not a result confirmed by that number.
+
+A first naive-walk symptom (the Video trap) was measured with a Python stand-in script, not the
+shipping code, and needed a second fix once it was: `LibraryIndexer`'s per-folder `runCatching` used
+to swallow *every* exception, including a transport failure (a dropped socket, a command timeout) -
+not just a receiver-reported one. Over a walk long enough to hit a flaky Wi-Fi moment or a HEOS
+socket reset, that meant every folder after the drop silently came back "empty", the walk still
+finished "successfully", and the good index on disk got overwritten with the truncated one -
+backwards from `SearchIndexRepository`'s whole reason for building the result in memory before
+replacing anything. Fixed by narrowing the catch to `HeosCommandException` (a real receiver answer,
+like `eid=12` for a stale cid) and letting anything else propagate out of the crawl and into
+`startReindex`'s `Failed` status, leaving the previous index in place. Covered by a test that drops
+the fake server's socket mid-walk and asserts the crawl fails rather than finishing.
+
+With the real fix in place, the actual shipping `LibraryIndexer` - not the earlier Python stand-in -
+was run against the real receiver, bounded to 280 seconds: 550 containers, 4,696 tracks, zero
+reported errors, correctly collapsing all eight views down to `By Folder` the whole time. It was
+still inside the `Genre > Artist > Album` tree `By Folder` itself imposes when the bound cut it off,
+consistent with the stand-in script's own earlier numbers (557 browses / 4,728 tracks in a
+similar window). A full first index of this particular library is a many-minutes operation,
+plausibly tens of minutes, not the "a couple of minutes" the code's own doc comments guessed before
+this was measured. `SearchIndexRepository` runs the crawl on its own singleton-owned scope for
+exactly this reason - it has to survive the user backing out of the Search screen, not just outlive
+one keystroke's worth of waiting. It does **not** survive the app's own process dying (no
+foreground service backs it, unlike the now-playing notification), so a first build that outlives
+the app being fully killed in the background has to be started again from where it left off, from
+scratch - there is no resume.
+
+Not separately measured, but true by construction: browsing and queueing from the Browse/Queue
+screens while a crawl is running share the one HEOS command socket `HeosSession` owns, and
+`HeosConnection.command` already correlates concurrent commands by sequence id rather than arrival
+order (see `HeosClientTest`'s own test for that) - so the two are expected to interleave correctly,
+at the cost of the receiver's attention being split, not to break each other.
+
+If a future receiver, firmware, or Plex version changes this - fixes `browse/search`, or reshapes
+the DLNA tree - re-probe rather than trusting these numbers, same as every other entry in this file.

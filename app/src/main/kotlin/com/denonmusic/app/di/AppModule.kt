@@ -13,6 +13,7 @@ import com.denonmusic.data.AppDatabase
 import com.denonmusic.data.browse.BrowseCacheDao
 import com.denonmusic.data.browse.BrowseStackDao
 import com.denonmusic.data.media.MediaInfoCacheDao
+import com.denonmusic.data.search.SearchIndexDao
 import com.denonmusic.data.settings.EncryptedSecretStore
 import com.denonmusic.data.settings.SettingsRepository
 import dagger.Module
@@ -44,8 +45,11 @@ object AppModule {
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, AppDatabase.NAME)
-            // Pre-release: no installed schema is worth preserving yet, and every cache table here
-            // repopulates itself from the network/filesystem on a miss.
+            // Every table here is a cache or saved UI state, not a record of anything that can't be
+            // re-derived: it repopulates itself from the receiver/filesystem on a miss, or the user
+            // just re-navigates. So a schema bump destroying and recreating the database costs an
+            // installed update one cold cache/reset browse position and scroll offsets, never real
+            // data - an acceptable one-time cost, not something worth a Migration per version.
             .fallbackToDestructiveMigration()
             .build()
 
@@ -57,6 +61,9 @@ object AppModule {
 
     @Provides
     fun provideMediaInfoCacheDao(db: AppDatabase): MediaInfoCacheDao = db.mediaInfoCacheDao()
+
+    @Provides
+    fun provideSearchIndexDao(db: AppDatabase): SearchIndexDao = db.searchIndexDao()
 
     /**
      * [HeosPlaybackStarter] only ever needs to clear the bridge queue, so it asks for the narrow

@@ -77,6 +77,14 @@ class BrowseViewModel @Inject constructor(
         viewModelScope.launch {
             browseRepository.observeStack().collectLatest { stack ->
                 _uiState.value = _uiState.value.copy(breadcrumb = stack)
+                // Refreshing here, not only from open()/goToBreadcrumb(), is what makes
+                // com.denonmusic.app.search.SearchViewModel.openContainer work: it pushes a path onto
+                // this same Room-backed stack from outside this view model entirely, and this is the
+                // one place that notices regardless of who wrote it. open() and goToBreadcrumb() still
+                // call refreshCurrentLevel() themselves too; see that function's own [loadedLevel]
+                // guard for why the two don't double the traffic to a receiver already documented as
+                // sensitive to being talked over.
+                refreshCurrentLevel()
             }
         }
     }
@@ -125,17 +133,36 @@ class BrowseViewModel @Inject constructor(
                 }
             }
         }
-        refreshCurrentLevel()
+        // force: a reconnect can land back on the same (sid, cid) it was already showing, but the
+        // listing itself may be stale after whatever caused the drop - unlike the dedup this skips
+        // elsewhere, a fresh connection always deserves a fresh read.
+        refreshCurrentLevel(force = true)
     }
+
+    /** The (sid, cid) [refreshCurrentLevel] last started a listing for - see its own doc. */
+    private var loadedLevel: Pair<String, String?>? = null
 
     /**
      * Reads the target level straight from [BrowseRepository] rather than `_uiState.breadcrumb`:
      * that field is populated by a separate collector on [BrowseRepository.observeStack] and is not
      * guaranteed to have caught up with a `replaceStack` this same call chain just made.
+     *
+     * Deduped by [loadedLevel] unless [force]: every stack mutation now triggers this twice - once
+     * from the call site that made it (`open`, `goToBreadcrumb`, `bootstrapUnsafe`, all of which pass
+     * `force = true` for exactly this reason) and once more from the `observeStack` collector in
+     * [init] reacting to the write - and without a guard on that second, unforced call, that was two
+     * `browseAll` walks per navigation against a receiver already documented (CLAUDE.md) as sensitive
+     * to overlapping commands. Recording the target *before* the listing starts, not after it
+     * finishes, is what makes the observer's call a no-op rather than a second in-flight walk: both
+     * calls run on the same `Dispatchers.Main.immediate` scope, so there is no race to guard the
+     * write itself.
      */
-    private suspend fun refreshCurrentLevel() {
+    private suspend fun refreshCurrentLevel(force: Boolean = false) {
         val client = session.heosClient ?: return
         val target = browseRepository.currentStack().lastOrNull() ?: return
+        val levelKey = target.sid to target.cid
+        if (!force && levelKey == loadedLevel) return
+        loadedLevel = levelKey
         listingJob?.cancel()
         _uiState.value = _uiState.value.copy(isLoading = true)
         listingJob = viewModelScope.launch {
@@ -166,14 +193,19 @@ class BrowseViewModel @Inject constructor(
             browseRepository.replaceStack(
                 newStack.map { BrowseLevel(it.sid, it.cid, it.displayName) },
             )
-            refreshCurrentLevel()
+            // force: a direct user action always deserves a fresh read - see refreshCurrentLevel's
+            // own doc for why the dedup guard exists at all and why it must not swallow this.
+            refreshCurrentLevel(force = true)
         }
     }
 
     fun goToBreadcrumb(position: Int) {
         viewModelScope.launch {
             browseRepository.truncateAfter(position)
-            refreshCurrentLevel()
+            // force: without it, tapping the *current* (already-open) breadcrumb - the one retry a
+            // failed listing has - would dedupe into a no-op, since truncateAfter(lastIndex) deletes
+            // nothing and so never even reaches the observer that would otherwise trigger a refresh.
+            refreshCurrentLevel(force = true)
         }
     }
 

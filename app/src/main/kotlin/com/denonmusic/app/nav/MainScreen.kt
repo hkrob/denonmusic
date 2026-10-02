@@ -30,11 +30,13 @@ import com.denonmusic.app.nowplaying.NowPlayingScreen
 import com.denonmusic.app.player.MiniPlayerBar
 import com.denonmusic.app.player.PlayerViewModel
 import com.denonmusic.app.queue.QueueScreen
+import com.denonmusic.app.search.SearchScreen
 import com.denonmusic.app.settings.SettingsScreen
 import com.denonmusic.app.ui.Winamp
 
 private enum class MainTab(val route: String, val label: String) {
     Browse("browse", "BROWSE"),
+    Search("search", "SEARCH"),
     Queue("queue", "QUEUE"),
     Avr("avr", "AVR"),
     Settings("settings", "SETTINGS"),
@@ -97,6 +99,17 @@ fun MainScreen() {
         Column(modifier = Modifier.weight(1f).consumeWindowInsets(WindowInsets.statusBars)) {
             NavHost(navController = navController, startDestination = MainTab.Browse.route) {
                 composable(MainTab.Browse.route) { BrowseScreen() }
+                composable(MainTab.Search.route) {
+                    SearchScreen(
+                        onOpenInBrowse = {
+                            navController.navigate(MainTab.Browse.route) {
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                    )
+                }
                 composable(MainTab.Queue.route) { QueueScreen(playerViewModel = playerViewModel) }
                 composable(MainTab.Avr.route) { AvrScreen() }
                 composable(MainTab.Settings.route) { SettingsScreen() }

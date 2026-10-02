@@ -53,6 +53,12 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.25" to listOf(
+        "New Search tab: builds a whole-library index (Artist/Album/Track) once in the background, " +
+            "then finds anything in it instantly - the receiver's own search is broken on this " +
+            "model, so this app no longer depends on it. A result opens straight into Browse, or " +
+            "queues directly with the same Play now/next/add-to-end options Browse has.",
+    ),
     "0.1.24" to listOf(
         "Seeking now also works from the lock screen and Bluetooth/Android Auto media controls, " +
             "not just the in-app progress bar.",

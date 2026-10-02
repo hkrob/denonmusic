@@ -8,16 +8,24 @@ import com.denonmusic.data.browse.BrowseStackDao
 import com.denonmusic.data.browse.BrowseStackEntity
 import com.denonmusic.data.media.MediaInfoCacheDao
 import com.denonmusic.data.media.MediaInfoCacheEntity
+import com.denonmusic.data.search.SearchIndexDao
+import com.denonmusic.data.search.SearchIndexEntity
 
 @Database(
-    entities = [BrowseStackEntity::class, BrowseCacheEntity::class, MediaInfoCacheEntity::class],
-    version = 3,
+    entities = [
+        BrowseStackEntity::class,
+        BrowseCacheEntity::class,
+        MediaInfoCacheEntity::class,
+        SearchIndexEntity::class,
+    ],
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun browseStackDao(): BrowseStackDao
     abstract fun browseCacheDao(): BrowseCacheDao
     abstract fun mediaInfoCacheDao(): MediaInfoCacheDao
+    abstract fun searchIndexDao(): SearchIndexDao
 
     companion object {
         const val NAME: String = "denonmusic.db"
