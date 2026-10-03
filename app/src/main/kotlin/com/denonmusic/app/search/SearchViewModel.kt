@@ -1,5 +1,6 @@
 package com.denonmusic.app.search
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denonmusic.app.browse.BrowseRepository
@@ -7,6 +8,7 @@ import com.denonmusic.app.browse.QueueAction
 import com.denonmusic.app.heos.HeosPlaybackStarter
 import com.denonmusic.app.heos.HeosSession
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +27,7 @@ data class SearchUiState(
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val session: HeosSession,
     private val indexRepository: SearchIndexRepository,
     private val browseRepository: BrowseRepository,
@@ -44,7 +47,20 @@ class SearchViewModel @Inject constructor(
         }
     }
 
-    fun reindex() = indexRepository.startReindex()
+    /**
+     * Starts [SearchIndexService] rather than calling [SearchIndexRepository.runReindex] directly -
+     * see that service's own doc for why a crawl over a large library needs to be a foreground
+     * service, not a screen-scoped call.
+     *
+     * `startForegroundService` can itself throw - a `ForegroundServiceStartNotAllowedException` on a
+     * restricted background start, same risk `NowPlayingShade.setShowing` already guards against -
+     * so this reports it as an ordinary [SearchIndexStatus.Failed] rather than crashing the screen
+     * the user just tapped a button on.
+     */
+    fun reindex() {
+        runCatching { SearchIndexService.start(context) }
+            .onFailure { e -> _uiState.value = _uiState.value.copy(message = "Couldn't start indexing: ${e.message}") }
+    }
 
     /**
      * Runs on every keystroke rather than only once the user stops typing: a query against the

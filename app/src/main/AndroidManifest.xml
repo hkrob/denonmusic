@@ -16,6 +16,16 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
+      The whole-library search index (app/search/) runs its crawl as a foreground service too, for a
+      different reason than playback: a large library's first build takes tens of minutes (measured,
+      see docs/local-setup.md 2026-10-02), long enough that Android kills it as ordinary background
+      work the moment the app leaves the foreground - the likeliest cause of reports of "it runs for
+      a while then just says not indexed" against a large library. FOREGROUND_SERVICE_DATA_SYNC is the type
+      Android 14+ requires for this kind of crawl-and-cache work.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!--
       allowBackup is off deliberately. Everything this app stores is either a LAN address or a
       password: the SMB share credentials and the LAN control token live in a plain (unencrypted)
       DataStore, so with backup enabled `adb backup` hands both to anyone with USB access to an
@@ -48,6 +58,12 @@
             android:name=".notification.NowPlayingService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Not exported: started only from this app, by SearchViewModel.reindex(). -->
+        <service
+            android:name=".search.SearchIndexService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- Hands a downloaded update APK (cache/updates) to the system installer read-only. -->
         <provider

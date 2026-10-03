@@ -42,6 +42,14 @@ data class AppSettings(
     val lanControlEnabled: Boolean = false,
     /** Shared secret a LAN client must send back (`X-Lan-Control-Token` header or `?token=`) to use the API. */
     val lanControlPassword: String? = null,
+    /**
+     * Set when a whole-library search reindex begins, cleared when it reaches any terminal state -
+     * see `SearchIndexRepository.runReindex`. Still set on the next launch means the previous attempt
+     * never got back to say how it ended: the process was killed, not merely a caught failure. This
+     * is the only way to tell that apart from "never tried" - `SearchIndexStatus` itself lives in
+     * memory and resets to `NeverIndexed` on every fresh process regardless of what happened before.
+     */
+    val pendingReindexStartedAt: Long? = null,
 ) {
     companion object {
         const val DEFAULT_AVR_INPUT_MNEMONIC: String = "NET"
@@ -82,6 +90,7 @@ class SettingsRepository(
             autoDimBrightnessPercent = prefs[KEY_AUTO_DIM_BRIGHTNESS_PERCENT] ?: AppSettings.DEFAULT_AUTO_DIM_BRIGHTNESS_PERCENT,
             lanControlEnabled = prefs[KEY_LAN_CONTROL_ENABLED] ?: false,
             lanControlPassword = secrets.read(SecretStore.LAN_CONTROL_PASSWORD),
+            pendingReindexStartedAt = prefs[KEY_PENDING_REINDEX_STARTED_AT],
         )
     }
 
@@ -139,6 +148,13 @@ class SettingsRepository(
         }
     }
 
+    /** Null clears it - see [AppSettings.pendingReindexStartedAt]. */
+    suspend fun setPendingReindexStartedAt(atMillis: Long?) {
+        dataStore.edit {
+            if (atMillis == null) it.remove(KEY_PENDING_REINDEX_STARTED_AT) else it[KEY_PENDING_REINDEX_STARTED_AT] = atMillis
+        }
+    }
+
     /**
      * Moves any password still sitting in plain DataStore into [secrets], once.
      *
@@ -176,6 +192,7 @@ class SettingsRepository(
         private val KEY_AUTO_DIM_BRIGHTNESS_PERCENT = intPreferencesKey("auto_dim_brightness_percent")
         private val KEY_LAN_CONTROL_ENABLED = booleanPreferencesKey("lan_control_enabled")
         private val KEY_LAN_CONTROL_PASSWORD = stringPreferencesKey("lan_control_password")
+        private val KEY_PENDING_REINDEX_STARTED_AT = longPreferencesKey("pending_reindex_started_at")
 
         const val PREFERENCES_NAME: String = "denonmusic_settings"
     }

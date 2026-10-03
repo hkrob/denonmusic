@@ -898,12 +898,29 @@ still inside the `Genre > Artist > Album` tree `By Folder` itself imposes when t
 consistent with the stand-in script's own earlier numbers (557 browses / 4,728 tracks in a
 similar window). A full first index of this particular library is a many-minutes operation,
 plausibly tens of minutes, not the "a couple of minutes" the code's own doc comments guessed before
-this was measured. `SearchIndexRepository` runs the crawl on its own singleton-owned scope for
-exactly this reason - it has to survive the user backing out of the Search screen, not just outlive
-one keystroke's worth of waiting. It does **not** survive the app's own process dying (no
-foreground service backs it, unlike the now-playing notification), so a first build that outlives
-the app being fully killed in the background has to be started again from where it left off, from
-scratch - there is no resume.
+this was measured. At the time, `SearchIndexRepository` ran the crawl on its own plain singleton
+scope - enough to survive backing out of the Search screen, but not enough to survive the app
+leaving the *foreground* for anywhere near tens of minutes, which Android does not let ordinary
+background work do. **This is the likeliest cause of a report from a user with a large library**
+(2026-10-03): "indexing keeps failing," with nothing more specific than coming back to find it
+showing not-indexed again. A background kill fits that shape exactly - the next launch finds no
+index and no error either, just `NeverIndexed`, as if nothing had ever been tried - but it is not the
+only thing that does: the same code had a second, independent bug, an uncaught exception from
+`get_music_sources` or the final DB write that would crash the whole app (see `runReindex`'s own doc
+on the fix), and a relaunch after *that* looks identical from the user's side. Both are fixed here,
+since there was no way to tell from the report alone which one actually happened, and both are worth
+fixing regardless. Moved the crawl into
+[`SearchIndexService`](../app/src/main/kotlin/com/denonmusic/app/search/SearchIndexService.kt), a
+foreground service for the reason
+[`NowPlayingService`](../app/src/main/kotlin/com/denonmusic/app/notification/NowPlayingService.kt)
+already is one: it is the one thing on Android that trades a persistent notification for not being
+killed on this timescale. `SearchIndexRepository.runReindex` is now just the work, wrapped so nothing
+it does can reach the app's own crash handler, and a marker in `SettingsRepository`
+(`pendingReindexStartedAt`) now tells "never tried" apart from "was tried and the process disappeared
+before it could say how," on whichever future report turns up next - see that setting's own doc.
+If a report like this recurs, the two things worth asking are roughly how many tracks are in the
+library and whether the app stayed open on screen the whole time - the second one alone rules a
+background kill in or out.
 
 Not separately measured, but true by construction: browsing and queueing from the Browse/Queue
 screens while a crawl is running share the one HEOS command socket `HeosSession` owns, and

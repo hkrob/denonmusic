@@ -53,6 +53,13 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.26" to listOf(
+        "Fixed: building the search index on a large library could silently fail and show " +
+            "\"not indexed\" with no explanation, especially after backgrounding the app. Indexing " +
+            "now runs as a foreground service (with its own notification) so it survives the app " +
+            "leaving the screen, retries automatically through a brief connection drop, and reports " +
+            "an honest failure instead of a silent one if it's ever interrupted.",
+    ),
     "0.1.25" to listOf(
         "New Search tab: builds a whole-library index (Artist/Album/Track) once in the background, " +
             "then finds anything in it instantly - the receiver's own search is broken on this " +

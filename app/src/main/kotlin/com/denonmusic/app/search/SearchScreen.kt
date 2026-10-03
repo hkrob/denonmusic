@@ -108,9 +108,11 @@ fun SearchScreen(onOpenInBrowse: () -> Unit, viewModel: SearchViewModel = hiltVi
                         if (state.indexStatus is SearchIndexStatus.NeverIndexed) {
                             // A full crawl over a real library measured in the tens of minutes, not
                             // seconds (see docs/local-setup.md, 2026-10-02) - said plainly up front
-                            // rather than left to look stuck once "BUILD INDEX" is tapped.
+                            // rather than left to look stuck once "BUILD INDEX" is tapped. Runs as a
+                            // foreground service (see SearchIndexService) precisely so this claim is
+                            // true even with the app backgrounded, not just this screen left.
                             "BUILD THE INDEX ABOVE, THEN SEARCH.\nA FIRST BUILD CAN TAKE A WHILE - " +
-                                "IT KEEPS RUNNING IF YOU LEAVE THIS SCREEN."
+                                "WATCH THE NOTIFICATION, NOT THIS SCREEN."
                         } else {
                             "TYPE TO SEARCH THE INDEXED LIBRARY."
                         },
@@ -152,7 +154,17 @@ private fun IndexBanner(status: SearchIndexStatus, onReindex: () -> Unit) {
             is SearchIndexStatus.Ready -> "${status.count} ITEMS - INDEXED ${status.indexedAt.toRelativeLabel()}"
             is SearchIndexStatus.Failed -> "INDEX FAILED: ${status.message}"
         }
-        Text(label, style = Winamp.smallStyle, color = if (status is SearchIndexStatus.Failed) Winamp.Amber else Winamp.GreenDim)
+        // weight(1f), not a plain Text: an unbounded Text in a Row claims as much width as its
+        // content wants before anything else is measured, and a long Failed message is long enough
+        // to claim the whole row and leave the button beside it zero width - confirmed live, where
+        // REINDEX silently stopped existing in the layout rather than just wrapping oddly. Weighting
+        // the text reserves the button's own intrinsic width first and gives the text only what's left.
+        Text(
+            label,
+            modifier = Modifier.weight(1f),
+            style = Winamp.smallStyle,
+            color = if (status is SearchIndexStatus.Failed) Winamp.Amber else Winamp.GreenDim,
+        )
         if (status !is SearchIndexStatus.Indexing) {
             TextButton(onClick = onReindex) {
                 Text(
