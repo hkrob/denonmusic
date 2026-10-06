@@ -10,20 +10,45 @@ for the current state, and the last section for what happened most recently.
 
 ## Where the work stands
 
-**Shipping.** v0.1.18 (`versionCode` 19) is published to GitHub Releases and the in-app updater
-offers it. (The version moves often; `app/build.gradle.kts` is the authority, not this line.) All six phases in [`plan.md`](plan.md) are done and verified end-to-end against the real
-AVR-X4500H. (A later "improvement plan", referenced by track letter further down this file, was
-never committed here - its Tracks A-D are all done, so nothing is lost by its absence; the sections
-below record what each one produced.)
+**Shipping.** v0.1.26 (`versionCode` 27) is published to GitHub Releases and the in-app updater
+offers it. (The version moves often; `app/build.gradle.kts` is the authority, not this line, and the
+About tab's CHANGELOG is the authority for what each version changed.) All six phases in
+[`plan.md`](plan.md) are done and were verified end-to-end against the real AVR-X4500H. Everything
+since then is listed below, newest first, with what was and was not checked on real hardware.
+
+- **0.1.26** - Search indexing made reliable on large libraries. The crawl runs as a foreground
+  service (`SearchIndexService`), so Android does not kill it when the app leaves the screen. A
+  transport failure retries the whole crawl up to three times; an uncaught exception no longer
+  reaches the app's crash handler; a marker records an attempt that never reported how it ended.
+  **Not verified on a real device:** a full crawl of a large library to completion. The emulator
+  test covered the service lifecycle, the interrupted-build message, and REINDEX after a failure.
+- **0.1.25** - Whole-library Search tab. Client-side index of the queueable source, cached in Room
+  (`SearchIndexEntity`, schema v4). Results open in Browse or queue directly. Chosen over
+  `browse/search` because that is broken on this receiver with Plex (see
+  [`heos-dlna-plex-jellyfin-conflict.md`](heos-dlna-plex-jellyfin-conflict.md)).
+- **0.1.24** - Seek from the lock screen and Bluetooth/Android Auto controls.
+- **0.1.23** - Seek within a track from Now Playing, over the receiver's UPnP AVTransport control
+  (port 60006). HEOS has no seek command.
+- **0.1.22** - Hardware volume keys control the receiver's volume while the app is open.
+
+Earlier phases verified on real hardware: browse, all four `aid` queue actions, gapless album
+playback, force-stop-and-keep-playing, browse memory across a reinstall, the AVR panel, the SMB bridge
+fallback, the Now Playing technical panel with chain integrity, LAN control, and the now-playing
+notification (including after the app's task is swiped away).
 
 - Every module in `settings.gradle.kts` is live: `:core:heos`, `:core:avr` and `:core:smb` are pure
   JVM, plus `:app` and `:core:data` when an Android SDK is present. Only `:feature:probe` is still
   commented out, and nothing wants it - `tools/probe.py` covers that ground.
-- **244 unit tests, 0 failures, 0 skipped.** ktlint and `:app:lintDebug` clean.
-- Verified on real hardware: browse, all four `aid` queue actions, gapless album playback,
-  force-stop-and-keep-playing, browse memory across a reinstall, the AVR panel, the SMB bridge
-  fallback, the Now Playing technical panel with chain integrity, LAN control, and the
-  now-playing notification (including after the app's task is swiped away).
+- **259 unit tests, 0 failures, 0 skipped** across `:app`, `:core:heos`, `:core:avr`, `:core:smb` and
+  `:core:data` (counted from the JUnit XML, 2026-10-06). `ktlintCheck` and `:app:lintDebug` clean.
+  CI was green on the 0.1.26 commit.
+- Open, in order of usefulness: confirm 0.1.26 completes a full index of a large library on a phone
+  with the app backgrounded; confirm search results open into Browse and queue correctly on device
+  (only the crawl and the UI states were exercised on the emulator); per-folder retry inside
+  `LibraryIndexer` and incremental persistence are both deliberately deferred until a report needs
+  them (see the 2026-10-02 entry).
+- Screenshots for the README are not yet in the repo. See "Emulator and screenshots" below for the
+  recipe and the blocker that stopped the capture on 2026-10-06.
 
 ### Building here
 
@@ -38,6 +63,34 @@ java -version                          # 17 or newer
 ./gradlew ktlintCheck :app:lintDebug
 ./gradlew :app:assembleDebug
 ```
+
+### Emulator and screenshots
+
+Use an emulator for anything version-specific (see CLAUDE.md). What worked here, 2026-10-06:
+
+```sh
+export ANDROID_HOME=/opt/android-sdk
+sdkmanager "system-images;android-34;google_apis;x86_64"       # the emulator and image are already installed
+echo no | avdmanager create avd -n shots_avd -k "system-images;android-34;google_apis;x86_64" -d pixel_6 --force
+apt-get install -y libx11-xcb1 libxcb1                         # the headless emulator needs it; absent here until installed
+emulator -avd shots_avd -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect &
+adb install -r app/build/outputs/apk/debug/app-debug.apk        # debug builds install as com.denonmusic.app.debug
+adb exec-out screencap -p > shot.png
+```
+
+- `-gpu off` and `-feature -Vulkan` both still hit the same missing `libX11-xcb` error; installing
+  the library is the fix, not a flag.
+- Screenshots: the debug build is `com.denonmusic.app.debug`. Do **not** capture the notification
+  shade. A fresh image showed notifications that were not from this project (a Google account
+  sign-in notice, a health-tracker reminder), and the same AVD has a separate
+  `com.robcloud.bloodpressure.debug` package installed that this project does not own.
+- Blocker, 2026-10-06: while the screenshot session was in progress, something on this host kept
+  launching `com.robcloud.bloodpressure.debug` onto the emulator via `am start` (launch
+  flags `0x10000000`, from the shell uid, about every 15 seconds), so taps on DenonMusic's own
+  tab bar kept losing focus. The app itself launched and rendered correctly (Browse showed the
+  receiver's Plex source), but no clean Search/AVR/Settings screenshot was obtained. The fix is
+  to stop whatever is launching that package, or use a fresh AVD with nothing else installed, and
+  then retake the set listed under "Screenshots" in [`README.md`](../README.md).
 
 ### Local-machine gotchas
 
@@ -930,3 +983,16 @@ at the cost of the receiver's attention being split, not to break each other.
 
 If a future receiver, firmware, or Plex version changes this - fixes `browse/search`, or reshapes
 the DLNA tree - re-probe rather than trusting these numbers, same as every other entry in this file.
+
+## Documentation pass and emulator check (2026-10-06)
+
+Brought the repo up to 0.1.26 so the next session, on any model, starts from accurate docs rather
+than from the 0.1.18 state this file last described. Verified before writing anything: 259 unit
+tests across the five test modules, 0 failures, 0 skipped; `ktlintCheck` and `:app:lintDebug` pass;
+CI green on commit 9398834.
+
+On an API 34 emulator (the same receiver, `10.1.10.50`), the 0.1.26 debug build connected and
+rendered Browse with the receiver's Plex source. The Search tab, AVR and Settings screens were not
+captured: a host-side process kept launching an unrelated package onto the same emulator while the
+capture ran, which is recorded with the recipe in "Emulator and screenshots" above. No app code
+changed in this pass. The README still has no screenshots as a result.

@@ -111,6 +111,10 @@ gh workflow run release.yml --ref claude/android-smb-denon-player-9710bx -f dry_
 gh run watch <run-id> --exit-status        # then repeat with dry_run=false to publish
 ```
 
+Before the release, bring the docs up to date with it: the "Where the work stands" section and the
+dated log in `docs/local-setup.md`, the Status feature list in `README.md`, and `docs/handoff-prompt.md`
+(its "Current state" line and open items). A model or machine switch should need nothing else.
+
 The workflow refuses to run past its first check if a release for that version already exists, so a
 dry run only means something after the version bump is pushed. After publishing, download the APK
 and confirm `apksigner verify --print-certs` shows the fingerprint pinned in `release.yml`.

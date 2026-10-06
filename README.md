@@ -32,10 +32,11 @@ to play an album.
 
 ```
 app/            Compose UI, ViewModels, Hilt wiring, the SMB bridge queue, the LAN control API.
-core/heos/      HEOS CLI protocol: codec, socket, event stream, typed client.  Pure JVM.
+core/heos/      HEOS CLI protocol: codec, socket, event stream, typed client, library crawler
+                (LibraryIndexer, behind Search).  Pure JVM.
 core/avr/       Raw Denon telnet control (port 23): power, input, sound mode, signal info.  Pure JVM.
 core/smb/       SMB access and audio header parsing (FLAC/DSF/DFF/MP3/M4A-MP4).  Pure JVM.
-core/data/      Room caches (browse listings, breadcrumb, media info) and DataStore settings.
+core/data/      Room caches (browse listings, breadcrumb, media info, the search index) and DataStore settings.
 tools/probe.py  Protocol probe for answering open questions against a real receiver.
 ```
 
@@ -167,9 +168,23 @@ set. It is meant for a trusted home LAN, not the open internet.
 
 ## Status
 
-Shipping. The protocol layer, probe, and the full Android app (browse, queue, now playing, AVR panel,
-SMB bridge playback, metadata overlay, LAN control) are in place and released - see the About tab or
-GitHub Releases for the current version.
+Shipping. The protocol layer, probe, and the full Android app are in place and released - see the
+About tab or GitHub Releases for the current version and its changelog.
+
+What the app does today:
+
+- **Browse, queue, now playing** over HEOS, with the four `aid` queue actions (play now, replace and
+  play, play next, add to end) and the browser remembering where you were.
+- **Whole-library Search** (0.1.25, reliability fixes in 0.1.26): builds an index of the queueable
+  source once, as a foreground service so it survives the app being backgrounded, then searches it
+  instantly. Results open in Browse or queue directly.
+- **Seek** within the current track from the progress bar, the lock screen and Bluetooth/Android
+  Auto controls (0.1.23, 0.1.24). Uses the receiver's UPnP transport, since HEOS has no seek command.
+- **Hardware volume keys** control the receiver's volume while the app is open (0.1.22).
+- **AVR panel and bit-perfect policy** (see above), the SMB bridge fallback, and LAN control.
+
+Known gaps are recorded in [`docs/local-setup.md`](docs/local-setup.md) under "Where the work
+stands", not here, so this page stays accurate between releases.
 
 Further reading, for anyone picking the project up:
 
