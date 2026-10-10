@@ -29,6 +29,7 @@ import com.denonmusic.app.browse.BrowseScreen
 import com.denonmusic.app.nowplaying.NowPlayingScreen
 import com.denonmusic.app.player.MiniPlayerBar
 import com.denonmusic.app.player.PlayerViewModel
+import com.denonmusic.app.playlists.PlaylistsScreen
 import com.denonmusic.app.queue.QueueScreen
 import com.denonmusic.app.search.SearchScreen
 import com.denonmusic.app.settings.SettingsScreen
@@ -37,6 +38,7 @@ import com.denonmusic.app.ui.Winamp
 private enum class MainTab(val route: String, val label: String) {
     Browse("browse", "BROWSE"),
     Search("search", "SEARCH"),
+    Playlists("playlists", "PLAYLISTS"),
     Queue("queue", "QUEUE"),
     Avr("avr", "AVR"),
     Settings("settings", "SETTINGS"),
@@ -110,6 +112,7 @@ fun MainScreen() {
                         },
                     )
                 }
+                composable(MainTab.Playlists.route) { PlaylistsScreen() }
                 composable(MainTab.Queue.route) { QueueScreen(playerViewModel = playerViewModel) }
                 composable(MainTab.Avr.route) { AvrScreen() }
                 composable(MainTab.Settings.route) { SettingsScreen() }

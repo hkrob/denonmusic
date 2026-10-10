@@ -23,6 +23,21 @@ interface SearchIndexDao {
     )
     suspend fun search(needle: String, limit: Int = 200): List<SearchIndexEntity>
 
+    /**
+     * Exact (case-insensitive) match for resolving one already-known track - used to map a Plex
+     * playlist item (artist/album/title from Plex's own API) onto this app's queueable HEOS target;
+     * see the app's `PlaylistRepository`. [artist]/[album] are optional: a track Plex didn't report
+     * either for still matches on title alone, at the cost of being more likely to match the wrong
+     * row when two different tracks share an exact title - there is no duration column here to break
+     * that tie with (nothing has needed one before this; see [SearchIndexEntity]).
+     */
+    @Query(
+        "SELECT * FROM search_index WHERE isTrack = 1 AND nameLower = :nameLower " +
+            "AND (:artist IS NULL OR artist = :artist COLLATE NOCASE) " +
+            "AND (:album IS NULL OR album = :album COLLATE NOCASE)",
+    )
+    suspend fun findTrack(nameLower: String, artist: String?, album: String?): List<SearchIndexEntity>
+
     @Query("SELECT COUNT(*) FROM search_index")
     suspend fun count(): Int
 

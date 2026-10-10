@@ -32,6 +32,9 @@ interface SecretStore {
     companion object {
         const val SMB_PASSWORD: String = "smb_password"
         const val LAN_CONTROL_PASSWORD: String = "lan_control_password"
+
+        /** Plex's `X-Plex-Token` - a credential for the whole Plex account, not just this library. */
+        const val PLEX_TOKEN: String = "plex_token"
     }
 }
 

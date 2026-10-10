@@ -45,6 +45,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var smbShare by remember { mutableStateOf("") }
     var smbUsername by remember { mutableStateOf("") }
     var smbPassword by remember { mutableStateOf("") }
+    var plexBaseUrl by remember { mutableStateOf("") }
+    var plexToken by remember { mutableStateOf("") }
     var autoDimAfterSeconds by remember { mutableStateOf("") }
     var autoDimBrightnessPercent by remember { mutableStateOf("") }
     var lanControlPassword by remember { mutableStateOf("") }
@@ -56,6 +58,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         smbShare = state.smbShare.orEmpty()
         smbUsername = state.smbUsername.orEmpty()
         smbPassword = state.smbPassword.orEmpty()
+        plexBaseUrl = state.plexBaseUrl.orEmpty()
+        plexToken = state.plexToken.orEmpty()
         autoDimAfterSeconds = state.autoDimAfterSeconds.toString()
         autoDimBrightnessPercent = state.autoDimBrightnessPercent.toString()
         lanControlPassword = state.lanControlPassword.orEmpty()
@@ -105,6 +109,20 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
 
             SmbConnectionTester(viewModel)
             SmbTester(viewModel)
+
+            SectionLabel("PLEX (for the Playlists tab)", modifier = Modifier.padding(top = 24.dp))
+            LabeledField("Server address, e.g. http://10.1.10.10:32400", plexBaseUrl, { plexBaseUrl = it })
+            LabeledField(
+                "Token (Plex web app → an item → Get Info → View XML; it's in that page's URL)",
+                plexToken,
+                { plexToken = it },
+                isPassword = true,
+            )
+            TextButton(onClick = {
+                if (plexBaseUrl.isNotBlank() && plexToken.isNotBlank()) viewModel.setPlexConfig(plexBaseUrl.trim(), plexToken.trim())
+            }) {
+                Text("SAVE PLEX SETTINGS", style = Winamp.labelStyle, color = Winamp.Amber)
+            }
 
             SectionLabel("DISPLAY", modifier = Modifier.padding(top = 24.dp))
             SwitchRow(

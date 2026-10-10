@@ -95,6 +95,10 @@ class SettingsViewModel @Inject constructor(
     fun setSmbCredentials(host: String, share: String, username: String, password: String) =
         viewModelScope.launch { settings.setSmbCredentials(host, share, username, password) }
 
+    /** See [SettingsRepository.setPlexConfig] - used by the Playlists tab, nothing else. */
+    fun setPlexConfig(baseUrl: String, token: String) =
+        viewModelScope.launch { settings.setPlexConfig(baseUrl, token) }
+
     fun setKeepScreenOn(enabled: Boolean) = viewModelScope.launch { settings.setKeepScreenOn(enabled) }
 
     fun setAutoDim(enabled: Boolean, afterSeconds: Int, brightnessPercent: Int) =

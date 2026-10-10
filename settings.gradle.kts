@@ -22,6 +22,7 @@ rootProject.name = "denonmusic"
 include(":core:heos")
 include(":core:avr")
 include(":core:smb")
+include(":core:plex")
 
 // Android modules need an SDK. Including them unconditionally makes `./gradlew
 // :core:heos:test` fail at configuration time on a machine without one, which would

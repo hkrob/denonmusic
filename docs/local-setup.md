@@ -16,6 +16,21 @@ About tab's CHANGELOG is the authority for what each version changed.) All six p
 [`plan.md`](plan.md) are done and were verified end-to-end against the real AVR-X4500H. Everything
 since then is listed below, newest first, with what was and was not checked on real hardware.
 
+- **In progress, not yet released: a Playlists tab for Plex's own playlists (play only).**
+  `:core:plex` is a new pure-JVM module (an HTTP client over Plex Media Server's own API, port
+  32400 - not the receiver) because HEOS/DLNA cannot see Plex playlists at all: probed live
+  (2026-10-10) against this project's own receiver and Plex server, the DLNA tree Plex exposes
+  stops at `Video`/`Music`/`Photos`, and the Music library's eight views have no `Playlists` among
+  them anywhere. A Plex playlist's tracks are matched by (artist, album, title) against the existing
+  Search index (`SearchIndexDao.findTrack`) to recover HEOS `sid/cid/mid`, then queued through the
+  same `HeosPlaybackStarter.addAll` Browse's "Play All" already uses - so this still never streams
+  audio through the phone. **Not verified against a real Plex server**: there was no `X-Plex-Token`
+  available to build against, so `PlexClient`'s JSON parsing is written from Plex's
+  community-documented API shape and tested only against a fake local HTTP server with fixtures this
+  project wrote itself - see that class's own doc. Needs the Plex server address and a token (pasted
+  into Settings) and a real playlist to confirm the wire shape, the matching rate on a real library,
+  and the UI on device, before this is ready to ship. Editing (add/remove/reorder, create/delete) is
+  out of scope for this slice - see that same doc for the shape a second pass would take.
 - **0.1.26** - Search indexing made reliable on large libraries. The crawl runs as a foreground
   service (`SearchIndexService`), so Android does not kill it when the app leaves the screen. A
   transport failure retries the whole crawl up to three times; an uncaught exception no longer
@@ -36,12 +51,13 @@ playback, force-stop-and-keep-playing, browse memory across a reinstall, the AVR
 fallback, the Now Playing technical panel with chain integrity, LAN control, and the now-playing
 notification (including after the app's task is swiped away).
 
-- Every module in `settings.gradle.kts` is live: `:core:heos`, `:core:avr` and `:core:smb` are pure
-  JVM, plus `:app` and `:core:data` when an Android SDK is present. Only `:feature:probe` is still
-  commented out, and nothing wants it - `tools/probe.py` covers that ground.
-- **259 unit tests, 0 failures, 0 skipped** across `:app`, `:core:heos`, `:core:avr`, `:core:smb` and
-  `:core:data` (counted from the JUnit XML, 2026-10-06). `ktlintCheck` and `:app:lintDebug` clean.
-  CI was green on the 0.1.26 commit.
+- Every module in `settings.gradle.kts` is live: `:core:heos`, `:core:avr`, `:core:smb` and
+  `:core:plex` are pure JVM, plus `:app` and `:core:data` when an Android SDK is present. Only
+  `:feature:probe` is still commented out, and nothing wants it - `tools/probe.py` covers that ground.
+- **268 unit tests, 0 failures, 0 skipped** across `:app`, `:core:heos`, `:core:avr`, `:core:smb`,
+  `:core:plex` and `:core:data` (counted from the JUnit XML, 2026-10-10). `ktlintCheck` and
+  `:app:lintDebug` clean, `:app:assembleDebug` builds. CI was green on the 0.1.26 commit; the Plex
+  work above is not pushed/released yet, so it has not been through CI.
 - Open, in order of usefulness: confirm 0.1.26 completes a full index of a large library on a phone
   with the app backgrounded; confirm search results open into Browse and queue correctly on device
   (only the crawl and the UI states were exercised on the emulator); per-folder retry inside
@@ -996,3 +1012,22 @@ rendered Browse with the receiver's Plex source. The Search tab, AVR and Setting
 captured: a host-side process kept launching an unrelated package onto the same emulator while the
 capture ran, which is recorded with the recipe in "Emulator and screenshots" above. No app code
 changed in this pass. The README still has no screenshots as a result.
+
+## Plex playlists: a probe, and the play-only slice it led to (2026-10-10)
+
+Asked how to play and edit Plex playlists. Checked the real tree before designing anything: walked
+`Local Music` -> `Plex Media Server: Sugar` on `10.1.10.50` down to the Music library's root and its
+eight views. There is no `Playlists` container anywhere in it - confirmed at the Plex server's own
+DLNA root too (`Video`/`Music`/`Photos` only). So HEOS/browse cannot be the answer for this at all;
+it has to go around the receiver, to Plex's own HTTP API (port 32400), confirmed reachable and
+confirmed it 401s `/playlists` without a token (`/identity` answers unauthenticated and gives the
+`machineIdentifier`).
+
+Built the play-only slice: `:core:plex` (`PlexClient`, pure JVM, `HttpURLConnection` rather than
+`java.net.http` - the latter needs API 34, this app's `minSdk` is 26), matched against the Search
+index's existing `queueSid/queueCid/mid` via a new `SearchIndexDao.findTrack`, queued through the
+existing `HeosPlaybackStarter.addAll`, with a new Playlists tab. No existing code changed its
+behaviour - this is additive. See "Where the work stands" above for exactly what is and isn't
+verified; the short version is that none of it has met a real Plex server yet, because building it
+didn't need one and testing the parsing properly does. Next step is the user's Plex server address
+and token, then a real playlist to check the match rate against, before any of this ships.

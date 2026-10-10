@@ -50,6 +50,12 @@ data class AppSettings(
      * memory and resets to `NeverIndexed` on every fresh process regardless of what happened before.
      */
     val pendingReindexStartedAt: Long? = null,
+    /** e.g. `http://10.1.10.10:32400` - Plex Media Server's own HTTP API, not the receiver. Needed
+     * only for the Playlists tab; everything else in this app works with neither of these two set. */
+    val plexBaseUrl: String? = null,
+    /** Plex's `X-Plex-Token`, pasted in rather than obtained through a sign-in flow - see
+     * `:core:plex`'s `PlexClient` doc for why. Kept in [SecretStore], not plain DataStore. */
+    val plexToken: String? = null,
 ) {
     companion object {
         const val DEFAULT_AVR_INPUT_MNEMONIC: String = "NET"
@@ -91,6 +97,8 @@ class SettingsRepository(
             lanControlEnabled = prefs[KEY_LAN_CONTROL_ENABLED] ?: false,
             lanControlPassword = secrets.read(SecretStore.LAN_CONTROL_PASSWORD),
             pendingReindexStartedAt = prefs[KEY_PENDING_REINDEX_STARTED_AT],
+            plexBaseUrl = prefs[KEY_PLEX_BASE_URL],
+            plexToken = secrets.read(SecretStore.PLEX_TOKEN),
         )
     }
 
@@ -148,6 +156,13 @@ class SettingsRepository(
         }
     }
 
+    /** Mirrors [setSmbCredentials]'s split: the address is an ordinary preference, the token goes
+     * through [secrets]. Blank clears the token, same as every other [SecretStore] write. */
+    suspend fun setPlexConfig(baseUrl: String, token: String) {
+        secrets.write(SecretStore.PLEX_TOKEN, token)
+        dataStore.edit { it[KEY_PLEX_BASE_URL] = baseUrl }
+    }
+
     /** Null clears it - see [AppSettings.pendingReindexStartedAt]. */
     suspend fun setPendingReindexStartedAt(atMillis: Long?) {
         dataStore.edit {
@@ -193,6 +208,7 @@ class SettingsRepository(
         private val KEY_LAN_CONTROL_ENABLED = booleanPreferencesKey("lan_control_enabled")
         private val KEY_LAN_CONTROL_PASSWORD = stringPreferencesKey("lan_control_password")
         private val KEY_PENDING_REINDEX_STARTED_AT = longPreferencesKey("pending_reindex_started_at")
+        private val KEY_PLEX_BASE_URL = stringPreferencesKey("plex_base_url")
 
         const val PREFERENCES_NAME: String = "denonmusic_settings"
     }

@@ -101,6 +101,7 @@ dependencies {
     implementation(project(":core:heos"))
     implementation(project(":core:avr"))
     implementation(project(":core:smb"))
+    implementation(project(":core:plex"))
     implementation(project(":core:data"))
 
     implementation(libs.androidx.core.ktx)
