@@ -7,6 +7,8 @@ import com.denonmusic.app.bridge.BridgeQueueController
 import com.denonmusic.app.bridge.BridgeQueueState
 import com.denonmusic.app.heos.HeosPlaybackStarter
 import com.denonmusic.app.heos.HeosSession
+import com.denonmusic.app.playlists.PlaylistRepository
+import com.denonmusic.app.playlists.PlexLookupTrack
 import com.denonmusic.avr.SignalType
 import com.denonmusic.heos.NowPlaying
 import com.denonmusic.heos.PlayState
@@ -115,6 +117,7 @@ class PlayerViewModel @Inject constructor(
     private val bridgeQueueController: BridgeQueueController,
     private val playbackStarter: HeosPlaybackStarter,
     private val tracker: PlayerStateTracker,
+    private val playlistRepository: PlaylistRepository,
 ) : ViewModel() {
 
     /**
@@ -291,6 +294,32 @@ class PlayerViewModel @Inject constructor(
             runCatching { client.saveQueueAsPlaylist(pid, name) }
                 .onFailure { e -> tracker.update { it.copy(message = e.message ?: "Save failed") } }
                 .onSuccess { tracker.update { it.copy(message = "Saved as \"$name\"") } }
+        }
+    }
+
+    /**
+     * The Plex-side sibling of [saveQueueAsPlaylist] - a *new* Plex playlist, not the HEOS-native
+     * one that saves into HEOS's own `Playlists` source (`sid 1025`). Looks every queued track up in
+     * Plex by (artist, album, title) - see [PlaylistRepository.createPlaylistFromTracks] - so a
+     * track Plex doesn't have, or has more than one of with nothing to disambiguate by, is left out
+     * rather than guessed at; [CreatePlaylistOutcome] reports exactly how many of the queue's tracks
+     * actually made it in.
+     */
+    fun saveQueueAsPlexPlaylist(name: String) {
+        val tracks = tracker.state.value.queue.map { PlexLookupTrack(it.song, it.artist, it.album) }
+        if (tracks.isEmpty()) return
+        viewModelScope.launch {
+            playlistRepository.createPlaylistFromTracks(name, tracks)
+                .onSuccess { outcome ->
+                    val note = if (outcome.addedCount == outcome.totalCount) {
+                        ""
+                    } else {
+                        " (${outcome.addedCount} of ${outcome.totalCount} tracks - the rest weren't found in Plex, " +
+                            "or matched more than one track there)"
+                    }
+                    tracker.update { it.copy(message = "Created Plex playlist \"${outcome.playlist.title}\"$note") }
+                }
+                .onFailure { e -> tracker.update { it.copy(message = e.message ?: "Couldn't create Plex playlist") } }
         }
     }
 

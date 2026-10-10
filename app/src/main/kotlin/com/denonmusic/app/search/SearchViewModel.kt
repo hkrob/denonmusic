@@ -7,6 +7,10 @@ import com.denonmusic.app.browse.BrowseRepository
 import com.denonmusic.app.browse.QueueAction
 import com.denonmusic.app.heos.HeosPlaybackStarter
 import com.denonmusic.app.heos.HeosSession
+import com.denonmusic.app.playlists.AddToPlaylistOutcome
+import com.denonmusic.app.playlists.PlaylistRepository
+import com.denonmusic.app.playlists.PlexLookupTrack
+import com.denonmusic.plex.PlexPlaylist
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -23,6 +27,10 @@ data class SearchUiState(
     val isSearching: Boolean = false,
     val indexStatus: SearchIndexStatus = SearchIndexStatus.NeverIndexed,
     val message: String? = null,
+    /** Non-null shows [com.denonmusic.app.playlists.PlaylistPickerDialog] for this result. */
+    val addToPlaylistTarget: SearchResult? = null,
+    val isLoadingPlaylists: Boolean = false,
+    val plexPlaylists: List<PlexPlaylist> = emptyList(),
 )
 
 @HiltViewModel
@@ -32,6 +40,7 @@ class SearchViewModel @Inject constructor(
     private val indexRepository: SearchIndexRepository,
     private val browseRepository: BrowseRepository,
     private val playbackStarter: HeosPlaybackStarter,
+    private val playlistRepository: PlaylistRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SearchUiState())
@@ -115,5 +124,46 @@ class SearchViewModel @Inject constructor(
 
     fun dismissMessage() {
         _uiState.value = _uiState.value.copy(message = null)
+    }
+
+    /** Opens [PlaylistPickerDialog][com.denonmusic.app.playlists.PlaylistPickerDialog] for [result]
+     * and loads the playlist list to fill it with - only [result]s that are tracks have anything to
+     * add, same restriction [queue] already applies for the same reason. */
+    fun startAddToPlaylist(result: SearchResult) {
+        if (!result.isTrack) return
+        _uiState.value = _uiState.value.copy(addToPlaylistTarget = result, isLoadingPlaylists = true)
+        viewModelScope.launch {
+            playlistRepository.listPlaylists()
+                .onSuccess { playlists -> _uiState.value = _uiState.value.copy(isLoadingPlaylists = false, plexPlaylists = playlists) }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        addToPlaylistTarget = null,
+                        isLoadingPlaylists = false,
+                        message = e.message ?: "Couldn't load Plex playlists",
+                    )
+                }
+        }
+    }
+
+    fun cancelAddToPlaylist() {
+        _uiState.value = _uiState.value.copy(addToPlaylistTarget = null)
+    }
+
+    fun confirmAddToPlaylist(playlist: PlexPlaylist) {
+        val target = _uiState.value.addToPlaylistTarget ?: return
+        _uiState.value = _uiState.value.copy(addToPlaylistTarget = null)
+        viewModelScope.launch {
+            val track = PlexLookupTrack(target.name, target.artist, target.album)
+            playlistRepository.addTrackToPlaylist(playlist, track)
+                .onSuccess { outcome ->
+                    val text = when (outcome) {
+                        AddToPlaylistOutcome.Added -> "Added \"${target.name}\" to ${playlist.title}"
+                        AddToPlaylistOutcome.Ambiguous -> "Couldn't tell which Plex track this is - more than one matched"
+                        AddToPlaylistOutcome.NotFoundInPlex -> "Couldn't find \"${target.name}\" in your Plex library"
+                    }
+                    _uiState.value = _uiState.value.copy(message = text)
+                }
+                .onFailure { e -> _uiState.value = _uiState.value.copy(message = e.message ?: "Couldn't add to playlist") }
+        }
     }
 }

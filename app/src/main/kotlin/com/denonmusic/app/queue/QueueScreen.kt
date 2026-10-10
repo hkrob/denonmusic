@@ -57,6 +57,7 @@ fun QueueScreen(playerViewModel: PlayerViewModel) {
     val state by playerViewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showSaveDialog by remember { mutableStateOf(false) }
+    var showSavePlexDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.message) {
         state.message?.let {
@@ -94,6 +95,12 @@ fun QueueScreen(playerViewModel: PlayerViewModel) {
                     } else {
                         TextButton(onClick = { showSaveDialog = true }, enabled = state.queue.isNotEmpty()) {
                             Text("SAVE", style = Winamp.labelStyle, color = Winamp.Amber)
+                        }
+                        // The HEOS-native save above goes into HEOS's own Playlists source (sid
+                        // 1025); this one is a separate, genuinely new Plex playlist - see
+                        // PlayerViewModel.saveQueueAsPlexPlaylist's own doc.
+                        TextButton(onClick = { showSavePlexDialog = true }, enabled = state.queue.isNotEmpty()) {
+                            Text("PLEX", style = Winamp.labelStyle, color = Winamp.Amber)
                         }
                         TextButton(onClick = playerViewModel::clearQueue, enabled = state.queue.isNotEmpty()) {
                             Text("CLEAR", style = Winamp.labelStyle, color = Winamp.Amber)
@@ -146,10 +153,22 @@ fun QueueScreen(playerViewModel: PlayerViewModel) {
 
     if (showSaveDialog) {
         SavePlaylistDialog(
+            title = "Save queue as playlist",
             onDismiss = { showSaveDialog = false },
             onSave = { name ->
                 showSaveDialog = false
                 playerViewModel.saveQueueAsPlaylist(name)
+            },
+        )
+    }
+
+    if (showSavePlexDialog) {
+        SavePlaylistDialog(
+            title = "Save queue as Plex playlist",
+            onDismiss = { showSavePlexDialog = false },
+            onSave = { name ->
+                showSavePlexDialog = false
+                playerViewModel.saveQueueAsPlexPlaylist(name)
             },
         )
     }
@@ -293,11 +312,11 @@ private fun BridgeQueueRow(item: BridgeQueueItem, isCurrent: Boolean, onTap: () 
 }
 
 @Composable
-private fun SavePlaylistDialog(onDismiss: () -> Unit, onSave: (String) -> Unit) {
+private fun SavePlaylistDialog(title: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Save queue as playlist", style = Winamp.labelStyle) },
+        title = { Text(title, style = Winamp.labelStyle) },
         text = {
             OutlinedTextField(
                 value = name,

@@ -16,6 +16,14 @@ About tab's CHANGELOG is the authority for what each version changed.) All six p
 [`plan.md`](plan.md) are done and were verified end-to-end against the real AVR-X4500H. Everything
 since then is listed below, newest first, with what was and was not checked on real hardware.
 
+- **In progress, not yet released: add-to-playlist and create-from-queue, the second pass 0.1.27's
+  own doc said was deferred.** See the 2026-10-11 "Playlist editing" entry below for the real-server
+  verification this was built against and the live test (a throwaway playlist, created, added to,
+  read back, then deleted) that confirmed it end to end. "Add to Plex playlist…" is wired into
+  Search's long-press menu; a new "PLEX" button on the Queue screen creates a playlist from the
+  current queue. Browse's and Playlists' own track rows don't have the add-to-playlist entry yet -
+  deferred to keep this slice reviewable, not because it's harder; the same dialog and repository
+  methods would wire in there in a few lines.
 - **0.1.28** - Two bugs from the first real use of 0.1.27, see the 2026-10-11 entry below for the
   full story: Settings' five "SAVE ..." buttons now confirm (or say why a save didn't happen),
   and the Playlists tab picks up a newly saved Plex server/token immediately instead of needing an
@@ -35,8 +43,9 @@ since then is listed below, newest first, with what was and was not checked on r
   Confirmed on the real phone and Plex server: `PlexClient`'s JSON parsing needed no changes against
   a real response; a real 20-track user playlist resolved 17 confidently and flagged 3 as ambiguous
   (never silently guessed); "Add All" queued the 17, in order, with correct artist/album, onto the
-  real HEOS queue. Editing (add/remove/reorder, create/delete) is out of scope for this slice - see
-  `PlaylistRepository`'s own doc for the shape a second pass would take.
+  real HEOS queue. Editing (add/remove/reorder, create/delete) was out of scope for this slice - see
+  the entry above for the second pass that added add-to-playlist and create-from-queue. Remove,
+  reorder, rename and delete are still open.
 - **0.1.26** - Search indexing made reliable on large libraries. The crawl runs as a foreground
   service (`SearchIndexService`), so Android does not kill it when the app leaves the screen. A
   transport failure retries the whole crawl up to three times; an uncaught exception no longer
@@ -60,11 +69,12 @@ notification (including after the app's task is swiped away).
 - Every module in `settings.gradle.kts` is live: `:core:heos`, `:core:avr`, `:core:smb` and
   `:core:plex` are pure JVM, plus `:app` and `:core:data` when an Android SDK is present. Only
   `:feature:probe` is still commented out, and nothing wants it - `tools/probe.py` covers that ground.
-- **272 unit tests, 0 failures, 0 skipped** across `:app`, `:core:heos`, `:core:avr`, `:core:smb`,
-  `:core:plex` and `:core:data` (counted from the JUnit XML, 2026-10-10). `ktlintCheck` and
+- **282 unit tests, 0 failures, 0 skipped** across `:app`, `:core:heos`, `:core:avr`, `:core:smb`,
+  `:core:plex` and `:core:data` (counted from the JUnit XML, 2026-10-11). `ktlintCheck` and
   `:app:lintDebug` clean, `:app:assembleDebug` builds.
-- Open, in order of usefulness: Plex playlist *editing* (add/remove/reorder, create/delete) is out
-  of scope for 0.1.27 - see `PlaylistRepository`'s own doc for the shape a second pass would take;
+- Open, in order of usefulness: remove/reorder/rename/delete on a Plex playlist are still not
+  implemented (add-to-playlist and create-from-queue are, as of the in-progress entry above); the
+  add-to-playlist entry isn't wired into Browse's or Playlists' own track rows yet, only Search's;
   per-folder retry inside `LibraryIndexer` and incremental search-index persistence are both
   deliberately deferred until a report needs them (see the 2026-10-02 entry).
 - Screenshots for the README are not yet in the repo. See "Emulator and screenshots" below for the
@@ -1121,3 +1131,54 @@ while it wasn't looking. If a third one shows up, it's probably not a one-off an
 whether `PlaylistsViewModel` (or the pattern generally) needs a more structural fix, like observing
 `SettingsRepository.settings` and `SearchIndexDao` changes directly instead of only re-checking on
 re-entry.
+
+## Playlist editing: add-to-existing and create-from-queue (2026-10-11)
+
+Asked how to add songs to a Plex playlist from the app - it couldn't, by design (0.1.27's slice was
+play only). Scoped to two pieces: add an existing (Search-found) track to an existing Plex playlist,
+and create a new Plex playlist from the current HEOS queue.
+
+This is the reverse direction from everything so far: 0.1.27 matches a *Plex* item against the
+*HEOS* search index to recover a queue target; this needs to match a *HEOS* track (from Search or
+the Queue) against *Plex's own library* to recover a `ratingKey` to write with. Verified against the
+real server before writing any Kotlin, the same way as the read side:
+
+- `GET /library/sections` - music section confirmed `key=3`, `type="artist"`.
+- `GET /library/sections/3/all?type=10&title=<q>` - confirmed this is a **substring** match, not
+  exact: searching "Manic Monday" returned 7 rows, including "Manic Monday (Unreleased)" and an
+  "(Apollonia Version Duet with Prince) (1984)" variant alongside the plain title. So the exact
+  (artist, album, title) narrowing already built for the other direction
+  (`PlaylistRepository.resolveTrack`) has a mirror, `resolveLibraryTrack`, doing the same
+  0/1/many -> Unmatched/Matched/Ambiguous decision here.
+- `POST /playlists?type=audio&smart=0&title=&uri=server://<machineId>/.../library/metadata/<keys>` -
+  creates a playlist seeded with items; several ratingKeys can be comma-joined in one `uri` and land
+  in one call (`leafCount` on the response matched the seed count).
+- `PUT /playlists/{id}/items?uri=...` - same comma-joined shape, adds to an existing playlist;
+  response carries `leafCountAdded`/`leafCountRequested` directly on `MediaContainer`, not inside a
+  `Metadata` row - confirmed by creating a throwaway test playlist, adding to it, reading it back,
+  then `DELETE /playlists/{id}` (204 No Content) to remove it, leaving the account exactly as found.
+
+Built `:core:plex`'s write side (`identity`, `musicSectionKey`, `findLibraryTracks`, `addToPlaylist`,
+`createPlaylist`) against these confirmed shapes, `PlaylistRepository.addTrackToPlaylist`/
+`createPlaylistFromTracks` on top, a shared `PlaylistPickerDialog`, and wired "Add to Plex
+playlist…" into Search's long-press menu and a new "PLEX" save button into the Queue screen
+(alongside the existing HEOS-native "SAVE", which saves into HEOS's own `Playlists` source and is a
+different thing entirely). Browse's and Playlists' own track rows don't have this yet - deferred to
+keep this slice reviewable; same shared dialog and repository methods would wire into either in a
+few lines when wanted.
+
+Verified live end to end, the same way as everything else in this project - against a throwaway test
+playlist, not the user's real ones:
+
+- "Add to Plex playlist…" on "Manic Monday" (seven library-wide title matches, only one of them
+  Prince/Originals) landed exactly `ratingKey 4492` - confirmed by reading the playlist back from
+  Plex directly afterward, not just trusting the app's own success message.
+- "PLEX" from the Queue, naming a new playlist, created it with 32 tracks matched out of the queue's
+  own (a mixed queue by then - the earlier 2026 Drive test tracks were still appended from
+  2026-10-10's verification, plus whatever Prince album was already playing).
+- Both throwaway playlists deleted afterward (`204` each); the account's real 7 playlists
+  (`❤️ Tracks`/`All Music`/`Fresh ❤️`/`Recently Added`/`Recently Played`/`2026 Drive`/`Christmas`)
+  were the only ones left, unchanged.
+
+282 tests (was 272: 6 new `PlexClientTest` cases for the write methods, 4 new
+`resolveLibraryTrack` cases), 0 failures. ktlint and `:app:lintDebug` clean.

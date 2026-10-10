@@ -18,10 +18,14 @@ import kotlin.test.fail
  * dependency, same "fake over a real socket" approach [com.denonmusic.heos.HeosClientTest] (and
  * everything that uses `FakeHeosServer`) already takes for the sibling protocol modules.
  *
- * No test here is run against a real Plex server - see [PlexClient]'s own doc on why the response
- * shape is unverified. These fixtures are this project's best understanding of Plex's JSON from its
- * community-documented API, not a captured real response; a mismatch found against real hardware
- * belongs here as a corrected fixture, same as `docs/local-setup.md` already does for HEOS.
+ * No test here is run against a real Plex server, but every fixture in this file is a response shape
+ * this project did see from one: the read side (`listPlaylists`/`playlistItems`) and the write side
+ * added here (`identity`/`musicSectionKey`/`findLibraryTracks`/`addToPlaylist`/`createPlaylist`) were
+ * each checked field-by-field against a real authenticated server (2026-10-10/11, see
+ * docs/local-setup.md) before being written the way they are below - including creating and deleting
+ * a throwaway test playlist to see the write responses for real. `ignoreUnknownKeys` stays on
+ * regardless, since Plex's schema is still undocumented outside its community wiki and only the
+ * fields this app reads were ever modelled.
  */
 @Timeout(30)
 class PlexClientTest {
@@ -29,6 +33,7 @@ class PlexClientTest {
     private lateinit var server: HttpServer
     private var lastRequestHeaders: com.sun.net.httpserver.Headers? = null
     private var lastRequestPath: String? = null
+    private var lastRequestMethod: String? = null
     private var responseStatus = 200
     private var responseBody = "{}"
 
@@ -38,6 +43,7 @@ class PlexClientTest {
         server.createContext("/") { exchange: HttpExchange ->
             lastRequestHeaders = exchange.requestHeaders
             lastRequestPath = exchange.requestURI.toString()
+            lastRequestMethod = exchange.requestMethod
             val bytes = responseBody.toByteArray()
             exchange.sendResponseHeaders(responseStatus, bytes.size.toLong())
             exchange.responseBody.use { it.write(bytes) }
@@ -122,6 +128,78 @@ class PlexClientTest {
             fail("expected PlexApiException")
         } catch (e: PlexApiException) {
             assertEquals(401, e.statusCode)
+        }
+    }
+
+    @Test
+    fun `identity reads machineIdentifier off MediaContainer directly, not a Metadata row`() = runBlocking {
+        responseBody = """{"MediaContainer":{"size":0,"apiVersion":"1.2.3","claimed":"1",""" +
+            """"machineIdentifier":"1811ecfc72fa401e87c7e8575a5b03053cc8c66e","version":"1.43.4"}}"""
+
+        assertEquals("1811ecfc72fa401e87c7e8575a5b03053cc8c66e", client().identity())
+        assertEquals("/identity", lastRequestPath)
+    }
+
+    @Test
+    fun `musicSectionKey picks the Directory entry whose type is artist`() = runBlocking {
+        responseBody = """
+            {"MediaContainer":{"Directory":[
+                {"key":"1","type":"movie","title":"Movies"},
+                {"key":"3","type":"artist","title":"Music"},
+                {"key":"2","type":"show","title":"TV Shows"}
+            ]}}
+        """.trimIndent()
+
+        assertEquals("3", client().musicSectionKey())
+    }
+
+    @Test
+    fun `findLibraryTracks parses matches the same way playlist items parse`() = runBlocking {
+        responseBody = """
+            {"MediaContainer":{"Metadata":[
+                {"ratingKey":"4492","title":"Manic Monday","grandparentTitle":"Prince","parentTitle":"Originals"},
+                {"ratingKey":"7688","title":"Manic Monday (Unreleased)","grandparentTitle":"Various Artists","parentTitle":"Prince Misc"}
+            ]}}
+        """.trimIndent()
+
+        val tracks = client().findLibraryTracks("3", "Manic Monday")
+
+        assertEquals("/library/sections/3/all?type=10&title=Manic+Monday", lastRequestPath)
+        assertEquals(2, tracks.size)
+        assertEquals(PlexLibraryTrack("4492", "Manic Monday", "Prince", "Originals"), tracks[0])
+    }
+
+    @Test
+    fun `addToPlaylist PUTs a comma-joined uri and reads leafCountAdded off MediaContainer`() = runBlocking {
+        responseBody = """{"MediaContainer":{"size":1,"leafCountAdded":2,"leafCountRequested":2,""" +
+            """"Metadata":[{"ratingKey":"48567","title":"test"}]}}"""
+
+        val added = client().addToPlaylist("48567", machineId = "abc123", itemRatingKeys = listOf("26110", "26258"))
+
+        assertEquals(2, added)
+        assertEquals("PUT", lastRequestMethod)
+        assertEquals(
+            "/playlists/48567/items?uri=server%3A%2F%2Fabc123%2Fcom.plexapp.plugins.library%2Flibrary%2Fmetadata%2F26110%2C26258",
+            lastRequestPath,
+        )
+    }
+
+    @Test
+    fun `createPlaylist POSTs and returns the playlist Plex reports back`() = runBlocking {
+        responseBody = """{"MediaContainer":{"size":1,"Metadata":[""" +
+            """{"ratingKey":"48567","title":"denonmusic-test-delete-me","leafCount":1}]}}"""
+
+        val playlist = client().createPlaylist("denonmusic-test-delete-me", machineId = "abc123", itemRatingKeys = listOf("4492"))
+
+        assertEquals(PlexPlaylist("48567", "denonmusic-test-delete-me", 1), playlist)
+        assertEquals("POST", lastRequestMethod)
+        assertTrue(lastRequestPath?.startsWith("/playlists?type=audio&smart=0&title=") == true)
+    }
+
+    @Test
+    fun `addToPlaylist refuses an empty list rather than making a nonsense request`(): Unit = runBlocking {
+        kotlin.test.assertFailsWith<IllegalArgumentException> {
+            client().addToPlaylist("1", machineId = "abc", itemRatingKeys = emptyList())
         }
     }
 }

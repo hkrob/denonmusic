@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.denonmusic.app.browse.QueueAction
+import com.denonmusic.app.playlists.PlaylistPickerDialog
 import com.denonmusic.app.ui.Winamp
 import com.denonmusic.app.ui.bevel
 import java.text.SimpleDateFormat
@@ -133,11 +134,21 @@ fun SearchScreen(onOpenInBrowse: () -> Unit, viewModel: SearchViewModel = hiltVi
                                 onOpenInBrowse()
                             },
                             onAction = { viewModel.queue(result, it) },
+                            onAddToPlaylist = { viewModel.startAddToPlaylist(result) },
                         )
                     }
                 }
             }
         }
+    }
+
+    if (state.addToPlaylistTarget != null) {
+        PlaylistPickerDialog(
+            playlists = state.plexPlaylists,
+            isLoading = state.isLoadingPlaylists,
+            onPick = viewModel::confirmAddToPlaylist,
+            onDismiss = viewModel::cancelAddToPlaylist,
+        )
     }
 }
 
@@ -182,7 +193,12 @@ private fun Long.toRelativeLabel(): String =
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SearchResultRow(result: SearchResult, onOpen: () -> Unit, onAction: (QueueAction) -> Unit) {
+private fun SearchResultRow(
+    result: SearchResult,
+    onOpen: () -> Unit,
+    onAction: (QueueAction) -> Unit,
+    onAddToPlaylist: () -> Unit,
+) {
     var menuExpanded by remember { mutableStateOf(false) }
     Box {
         Row(
@@ -213,6 +229,17 @@ private fun SearchResultRow(result: SearchResult, onOpen: () -> Unit, onAction: 
                     onClick = {
                         menuExpanded = false
                         onAction(action)
+                    },
+                )
+            }
+            // Only a track has anything to add - a container result queues a whole subtree, which
+            // isn't "one track to add to a Plex playlist" the same way.
+            if (result.isTrack) {
+                DropdownMenuItem(
+                    text = { Text("Add to Plex playlist…") },
+                    onClick = {
+                        menuExpanded = false
+                        onAddToPlaylist()
                     },
                 )
             }
