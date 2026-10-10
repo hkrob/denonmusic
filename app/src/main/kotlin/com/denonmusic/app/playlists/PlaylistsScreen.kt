@@ -60,6 +60,11 @@ fun PlaylistsScreen(viewModel: PlaylistsViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // Runs once per entry into composition - i.e. every time this tab is switched back to, not on
+    // every recomposition - since navigating away disposes this composable even though the
+    // ViewModel's own state survives it. See refreshSelectedIfOpen's own doc for why that matters.
+    LaunchedEffect(Unit) { viewModel.refreshSelectedIfOpen() }
+
     LaunchedEffect(state.message) {
         state.message?.let {
             snackbarHostState.showSnackbar(it)

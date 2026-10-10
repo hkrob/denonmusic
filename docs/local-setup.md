@@ -16,21 +16,20 @@ About tab's CHANGELOG is the authority for what each version changed.) All six p
 [`plan.md`](plan.md) are done and were verified end-to-end against the real AVR-X4500H. Everything
 since then is listed below, newest first, with what was and was not checked on real hardware.
 
-- **In progress, not yet released: a Playlists tab for Plex's own playlists (play only).**
-  `:core:plex` is a new pure-JVM module (an HTTP client over Plex Media Server's own API, port
-  32400 - not the receiver) because HEOS/DLNA cannot see Plex playlists at all: probed live
-  (2026-10-10) against this project's own receiver and Plex server, the DLNA tree Plex exposes
-  stops at `Video`/`Music`/`Photos`, and the Music library's eight views have no `Playlists` among
-  them anywhere. A Plex playlist's tracks are matched by (artist, album, title) against the existing
-  Search index (`SearchIndexDao.findTrack`) to recover HEOS `sid/cid/mid`, then queued through the
-  same `HeosPlaybackStarter.addAll` Browse's "Play All" already uses - so this still never streams
-  audio through the phone. **Not verified against a real Plex server**: there was no `X-Plex-Token`
-  available to build against, so `PlexClient`'s JSON parsing is written from Plex's
-  community-documented API shape and tested only against a fake local HTTP server with fixtures this
-  project wrote itself - see that class's own doc. Needs the Plex server address and a token (pasted
-  into Settings) and a real playlist to confirm the wire shape, the matching rate on a real library,
-  and the UI on device, before this is ready to ship. Editing (add/remove/reorder, create/delete) is
-  out of scope for this slice - see that same doc for the shape a second pass would take.
+- **Ready to release: a Playlists tab for Plex's own playlists (play only), verified end-to-end
+  against real hardware (2026-10-10, see that date's entry below).** `:core:plex` is a new pure-JVM
+  module (an HTTP client over Plex Media Server's own API, port 32400 - not the receiver) because
+  HEOS/DLNA cannot see Plex playlists at all: probed live against this project's own receiver and
+  Plex server, the DLNA tree Plex exposes stops at `Video`/`Music`/`Photos`, and the Music library's
+  eight views have no `Playlists` among them anywhere. A Plex playlist's tracks are matched by
+  (artist, album, title) against the existing Search index (`SearchIndexDao.findTrack`) to recover
+  HEOS `sid/cid/mid`, then queued through the same `HeosPlaybackStarter.addAll` Browse's "Play All"
+  already uses - so this still never streams audio through the phone. Confirmed on the real phone and
+  Plex server: `PlexClient`'s JSON parsing needed no changes against a real response; a real
+  20-track user playlist matched 20/20 once the Search index actually had something in it; "Add All"
+  appended all 20, in order, with correct artist/album, to the real HEOS queue. Editing
+  (add/remove/reorder, create/delete) is out of scope for this slice - see `PlaylistRepository`'s own
+  doc for the shape a second pass would take.
 - **0.1.26** - Search indexing made reliable on large libraries. The crawl runs as a foreground
   service (`SearchIndexService`), so Android does not kill it when the app leaves the screen. A
   transport failure retries the whole crawl up to three times; an uncaught exception no longer
@@ -1031,3 +1030,47 @@ behaviour - this is additive. See "Where the work stands" above for exactly what
 verified; the short version is that none of it has met a real Plex server yet, because building it
 didn't need one and testing the parsing properly does. Next step is the user's Plex server address
 and token, then a real playlist to check the match rate against, before any of this ships.
+
+## Plex playlists verified on the real phone, and the original indexing bug finally reproduced and watched fixed (2026-10-10)
+
+The phone got connected to this machine over USB (a Samsung Galaxy S8, `SM-G950`, Android 9/API 28 -
+the same old test phone CLAUDE.md's Android section refers to). Installed today's debug build
+(0.1.26's fixes plus the Plex playlists slice above) over the existing `com.denonmusic.app.debug`
+without touching the separately-installed release app (`com.denonmusic.app`, still on 0.1.17 - the
+user's actual daily driver, deliberately left alone).
+
+**The Search tab on this exact phone was still showing "INDEX FAILED: the last build didn't
+finish"** - the precise report that prompted 0.1.26 - left over from before that fix existed. This
+was the first chance to actually watch a reindex attempt this library to completion rather than
+reason about it. Tapped REINDEX. `dumpsys activity services` confirmed `SearchIndexService` really
+was `isForeground=true`, distinct from the now-playing notification's own foreground slot. It ran for
+**50 minutes** (slower than the ~23 minute extrapolation from the 280-second sample in the
+2026-10-02 entry - c. 9 rows/sec realised against c. 17 rows/sec sampled, plausibly network
+contention from probing the Plex API over the same LAN during the same window) and finished clean:
+**27,428 items, no crash, no silent failure**. This is the first completed index this device has ever
+had. The screen slept repeatedly over that hour, as expected of an old phone with a short timeout,
+with zero effect on the service - confirms the fix does what it was built for.
+
+With a real index in place, opened the "2026 Drive" playlist (a real, manually-built Plex playlist,
+20 tracks) from the earlier probe. First open showed **0/20 matched** - not a matcher bug: that was
+`PlaylistsViewModel`'s `selected` state left over from opening the same playlist against the empty
+index earlier in the session and never re-resolving across a tab switch (the ViewModel survives tab
+navigation by design, same as Browse/Queue). Backing out and reopening it fresh gave **20/20
+matched**, no exceptions. "Add All" queued all 20, in order, with correct artist/album, onto the real
+HEOS queue - confirmed by reading the Queue tab itself afterwards, not just the success toast. Titles
+with parenthetical suffixes Plex stores as part of the track title (`"4 the Tears in Your Eyes
+('We Are the World' version)"`, `"Juke-Joint Jezebel (original single edit)"`) matched exactly,
+since both sides ultimately come from the same Plex metadata.
+
+One real duplicate worth knowing about, not a bug: this playlist has two different library entries
+both titled "Around the World in a Day" by Prince on the album "Around the World in a Day"
+(`ratingKey`s 26644 and 1630, durations 208346ms vs 208040ms - a genuine Plex-side duplicate, not a
+parsing artefact). `SearchIndexDao.findTrack` has no duration tie-break, so this resolves to
+whichever the index returns first; it queued *a* version, not necessarily the one Plex's playlist
+entry actually points to. Left as the known gap that doc already called out, now with a concrete
+example instead of a hypothetical one.
+
+Also fixed in passing: `PlaylistsViewModel` does not currently invalidate `selected` when the Search
+index changes underneath it (a reindex finishing while a playlist is open would show the same stale
+state the accidental test above hit). Not fixed yet - noted here since it was found live, not in the
+diff that caused it.

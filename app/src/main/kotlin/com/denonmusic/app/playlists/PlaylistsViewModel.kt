@@ -45,6 +45,20 @@ class PlaylistsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Re-resolves whatever playlist is currently open, if any - call this when the screen re-enters
+     * composition (switching tabs and back), since this ViewModel's store survives that switch, same
+     * as Browse's and Queue's, so [uiState] still shows a resolution made before the Search index
+     * last changed underneath it. Caught live on a real phone (see docs/local-setup.md, 2026-10-10):
+     * opening a playlist against an empty index, reindexing, switching tabs away and back, showed the
+     * same "nothing matched" result from before the reindex, because nothing had told this screen to
+     * look again. A no-op when nothing is open (the list view has nothing stale to refresh).
+     */
+    fun refreshSelectedIfOpen() {
+        val playlist = _uiState.value.selected?.playlist ?: return
+        open(playlist)
+    }
+
     fun open(playlist: PlexPlaylist) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
