@@ -178,6 +178,10 @@ What the app does today:
 - **Whole-library Search** (0.1.25, reliability fixes in 0.1.26): builds an index of the queueable
   source once, as a foreground service so it survives the app being backgrounded, then searches it
   instantly. Results open in Browse or queue directly.
+- **Playlists** (0.1.27): plays your own Plex playlists, read straight from Plex's API since the
+  receiver's HEOS/DLNA connection can't see them at all - still queued through the real HEOS queue,
+  never streamed through the phone, and a song matched more than once in your library is flagged for
+  you to pick rather than guessed at. Play only for now; editing a Plex playlist isn't implemented.
 - **Seek** within the current track from the progress bar, the lock screen and Bluetooth/Android
   Auto controls (0.1.23, 0.1.24). Uses the receiver's UPnP transport, since HEOS has no seek command.
 - **Hardware volume keys** control the receiver's volume while the app is open (0.1.22).

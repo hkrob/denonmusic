@@ -40,11 +40,12 @@ Two notes about tooling:
   - An emulator is the right tool for anything version-specific. The physical test phone is old
     and cannot reach most modern Android behaviour; assuming otherwise has cost releases before.
 
-Current state: v0.1.26 (versionCode 27), branch claude/android-smb-denon-player-9710bx (also the
-default branch), CI green on the 0.1.26 commit, 259 unit tests passing. Features since v0.1.18 are
-volume keys (0.1.22), seek (0.1.23, 0.1.24) and whole-library Search with a foreground-service
-indexer (0.1.25, 0.1.26). The "Where the work stands" section of docs/local-setup.md has the detail,
-including what has not been verified on a phone.
+Current state: v0.1.27 (versionCode 28), branch claude/android-smb-denon-player-9710bx (also the
+default branch), 272 unit tests passing. Features since v0.1.18 are volume keys (0.1.22), seek
+(0.1.23, 0.1.24), whole-library Search with a foreground-service indexer (0.1.25, 0.1.26), and a
+Playlists tab for Plex's own playlists (0.1.27, play only - editing is still open, see below). The
+"Where the work stands" section of docs/local-setup.md has the detail, including what has and hasn't
+been verified on a phone.
 
 Nothing is urgently broken. Report what the checks say, and don't start work until I've picked
 something.
@@ -62,10 +63,8 @@ public. Read that alongside this file when actually moving.
 
 Nothing here is a known defect. In rough order of usefulness:
 
-- **0.1.26 on a large library.** The indexer has not been run to completion on a phone. Ask for the
-  track count and whether the app stayed open; the diagnostic marker reports an interrupted build.
-- **Search results on device.** Opening a result into Browse and queueing from Search were not
-  exercised on hardware after 0.1.26.
+- **Plex playlist editing** (add/remove/reorder, create/delete) is out of scope for 0.1.27's
+  play-only slice. `PlaylistRepository`'s own doc sketches the shape a second pass would take.
 - The multi-part **"Play now"** path (`aid=1` with more than one target) was never measured. The
   replace-and-play path beside it turned out to lose both its replace and its play when another add
   followed, so this one deserves the same scepticism before it is trusted.

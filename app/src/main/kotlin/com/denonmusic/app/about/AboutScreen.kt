@@ -53,6 +53,13 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.27" to listOf(
+        "New Playlists tab: play your own Plex playlists. The receiver's HEOS/DLNA connection " +
+            "can't see Plex playlists at all, so this reads them from Plex directly (set the " +
+            "server address and a token in Settings) and queues matched tracks through the normal " +
+            "HEOS queue - still never streamed through the phone. If the same song exists more " +
+            "than once in your library, it's flagged for you to pick rather than queued as a guess.",
+    ),
     "0.1.26" to listOf(
         "Fixed: building the search index on a large library could silently fail and show " +
             "\"not indexed\" with no explanation, especially after backgrounding the app. Indexing " +

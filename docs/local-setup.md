@@ -10,14 +10,14 @@ for the current state, and the last section for what happened most recently.
 
 ## Where the work stands
 
-**Shipping.** v0.1.26 (`versionCode` 27) is published to GitHub Releases and the in-app updater
+**Shipping.** v0.1.27 (`versionCode` 28) is published to GitHub Releases and the in-app updater
 offers it. (The version moves often; `app/build.gradle.kts` is the authority, not this line, and the
 About tab's CHANGELOG is the authority for what each version changed.) All six phases in
 [`plan.md`](plan.md) are done and were verified end-to-end against the real AVR-X4500H. Everything
 since then is listed below, newest first, with what was and was not checked on real hardware.
 
-- **Ready to release: a Playlists tab for Plex's own playlists (play only), verified end-to-end
-  against real hardware (2026-10-10, see that date's entry below).** `:core:plex` is a new pure-JVM
+- **0.1.27** - A Playlists tab for Plex's own playlists (play only), verified end-to-end
+  against real hardware (2026-10-10, see that date's entry below). `:core:plex` is a new pure-JVM
   module (an HTTP client over Plex Media Server's own API, port 32400 - not the receiver) because
   HEOS/DLNA cannot see Plex playlists at all: probed live against this project's own receiver and
   Plex server, the DLNA tree Plex exposes stops at `Video`/`Music`/`Photos`, and the Music library's
@@ -55,15 +55,13 @@ notification (including after the app's task is swiped away).
 - Every module in `settings.gradle.kts` is live: `:core:heos`, `:core:avr`, `:core:smb` and
   `:core:plex` are pure JVM, plus `:app` and `:core:data` when an Android SDK is present. Only
   `:feature:probe` is still commented out, and nothing wants it - `tools/probe.py` covers that ground.
-- **268 unit tests, 0 failures, 0 skipped** across `:app`, `:core:heos`, `:core:avr`, `:core:smb`,
+- **272 unit tests, 0 failures, 0 skipped** across `:app`, `:core:heos`, `:core:avr`, `:core:smb`,
   `:core:plex` and `:core:data` (counted from the JUnit XML, 2026-10-10). `ktlintCheck` and
-  `:app:lintDebug` clean, `:app:assembleDebug` builds. CI was green on the 0.1.26 commit; the Plex
-  work above is not pushed/released yet, so it has not been through CI.
-- Open, in order of usefulness: confirm 0.1.26 completes a full index of a large library on a phone
-  with the app backgrounded; confirm search results open into Browse and queue correctly on device
-  (only the crawl and the UI states were exercised on the emulator); per-folder retry inside
-  `LibraryIndexer` and incremental persistence are both deliberately deferred until a report needs
-  them (see the 2026-10-02 entry).
+  `:app:lintDebug` clean, `:app:assembleDebug` builds.
+- Open, in order of usefulness: Plex playlist *editing* (add/remove/reorder, create/delete) is out
+  of scope for 0.1.27 - see `PlaylistRepository`'s own doc for the shape a second pass would take;
+  per-folder retry inside `LibraryIndexer` and incremental search-index persistence are both
+  deliberately deferred until a report needs them (see the 2026-10-02 entry).
 - Screenshots for the README are not yet in the repo. See "Emulator and screenshots" below for the
   recipe and the blocker that stopped the capture on 2026-10-06.
 
