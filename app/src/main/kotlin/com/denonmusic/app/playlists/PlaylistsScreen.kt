@@ -64,8 +64,8 @@ fun PlaylistsScreen(viewModel: PlaylistsViewModel = hiltViewModel()) {
 
     // Runs once per entry into composition - i.e. every time this tab is switched back to, not on
     // every recomposition - since navigating away disposes this composable even though the
-    // ViewModel's own state survives it. See refreshSelectedIfOpen's own doc for why that matters.
-    LaunchedEffect(Unit) { viewModel.refreshSelectedIfOpen() }
+    // ViewModel's own state survives it. See refreshOnReentry's own doc for why that matters.
+    LaunchedEffect(Unit) { viewModel.refreshOnReentry() }
 
     LaunchedEffect(state.message) {
         state.message?.let {

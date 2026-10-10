@@ -32,9 +32,10 @@ class PlaylistsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(PlaylistsUiState())
     val uiState: StateFlow<PlaylistsUiState> = _uiState.asStateFlow()
 
-    init {
-        refresh()
-    }
+    // No init { refresh() } here - PlaylistsScreen's own LaunchedEffect(Unit) calls refreshOnReentry()
+    // on first composition too, so one more call here would just be a redundant first fetch. See
+    // refreshOnReentry's own doc for why a call on every re-entry, not just the first, is the actual
+    // fix this needs.
 
     fun refresh() {
         viewModelScope.launch {
@@ -48,15 +49,28 @@ class PlaylistsViewModel @Inject constructor(
     }
 
     /**
-     * Re-resolves whatever playlist is currently open, if any - call this when the screen re-enters
-     * composition (switching tabs and back), since this ViewModel's store survives that switch, same
-     * as Browse's and Queue's, so [uiState] still shows a resolution made before the Search index
-     * last changed underneath it. Caught live on a real phone (see docs/local-setup.md, 2026-10-10):
-     * opening a playlist against an empty index, reindexing, switching tabs away and back, showed the
-     * same "nothing matched" result from before the reindex, because nothing had told this screen to
-     * look again. A no-op when nothing is open (the list view has nothing stale to refresh).
+     * Call this - not [refresh] or [refreshSelectedIfOpen] alone - every time [PlaylistsScreen]
+     * re-enters composition (switching tabs and back), since this ViewModel's store survives that
+     * switch, same as Browse's and Queue's: without this, [uiState] goes on showing whatever it
+     * showed the moment this ViewModel was first created, no matter what changed meanwhile.
+     *
+     * Two real reports, same root cause, caught live on a real phone (see docs/local-setup.md,
+     * 2026-10-10 and 2026-10-11): (1) opening a playlist against an empty Search index, reindexing,
+     * switching tabs away and back, showed the same "nothing matched" result from before the
+     * reindex; (2) saving Plex server/token in Settings for the *first* time, then opening this tab,
+     * still showed "no playlists - set your Plex details", because [refresh] had already run once
+     * against the not-yet-configured state back when this ViewModel was created and nothing told it
+     * to try again - a full app restart was the only thing that created a fresh ViewModel instance
+     * to pick the new settings up. [refresh] re-fetches the playlist list itself (cheap: it is what
+     * picks up Plex being configured, or re-configured, after the first time); [refreshSelectedIfOpen]
+     * re-resolves whichever playlist is open, if any.
      */
-    fun refreshSelectedIfOpen() {
+    fun refreshOnReentry() {
+        refresh()
+        refreshSelectedIfOpen()
+    }
+
+    private fun refreshSelectedIfOpen() {
         val playlist = _uiState.value.selected?.playlist ?: return
         open(playlist)
     }

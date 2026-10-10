@@ -13,6 +13,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -38,6 +40,15 @@ import com.denonmusic.app.ui.Winamp
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val state by viewModel.settingsState.collectAsState()
+    val message by viewModel.message.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(message) {
+        message?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.dismissMessage()
+        }
+    }
 
     var avrHost by remember { mutableStateOf("") }
     var inputMnemonic by remember { mutableStateOf("") }
@@ -76,6 +87,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 ),
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -91,6 +103,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             TextButton(onClick = {
                 if (avrHost.isNotBlank()) viewModel.setAvrHost(avrHost.trim())
                 if (inputMnemonic.isNotBlank()) viewModel.setAvrInputMnemonic(inputMnemonic.trim())
+                viewModel.confirmSaved("Receiver settings saved")
             }) {
                 Text("SAVE RECEIVER SETTINGS", style = Winamp.labelStyle, color = Winamp.Amber)
             }
@@ -103,6 +116,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             LabeledField("Password", smbPassword, { smbPassword = it }, isPassword = true)
             TextButton(onClick = {
                 viewModel.setSmbCredentials(smbHost.trim(), smbShare.trim(), smbUsername.trim(), smbPassword)
+                viewModel.confirmSaved("SMB credentials saved")
             }) {
                 Text("SAVE SMB CREDENTIALS", style = Winamp.labelStyle, color = Winamp.Amber)
             }
@@ -119,7 +133,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 isPassword = true,
             )
             TextButton(onClick = {
-                if (plexBaseUrl.isNotBlank() && plexToken.isNotBlank()) viewModel.setPlexConfig(plexBaseUrl.trim(), plexToken.trim())
+                if (plexBaseUrl.isNotBlank() && plexToken.isNotBlank()) {
+                    viewModel.setPlexConfig(plexBaseUrl.trim(), plexToken.trim())
+                    viewModel.confirmSaved("Plex settings saved")
+                } else {
+                    viewModel.confirmSaved("Enter both the server address and the token first")
+                }
             }) {
                 Text("SAVE PLEX SETTINGS", style = Winamp.labelStyle, color = Winamp.Amber)
             }
@@ -148,6 +167,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 val afterSeconds = autoDimAfterSeconds.toIntOrNull() ?: state.autoDimAfterSeconds
                 val brightness = autoDimBrightnessPercent.toIntOrNull() ?: state.autoDimBrightnessPercent
                 viewModel.setAutoDim(state.autoDimEnabled, afterSeconds, brightness)
+                viewModel.confirmSaved("Auto-dim settings saved")
             }) {
                 Text("SAVE AUTO-DIM SETTINGS", style = Winamp.labelStyle, color = Winamp.Amber)
             }
@@ -165,7 +185,16 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 onCheckedChange = { viewModel.setLanControl(it, lanControlPassword) },
             )
             LabeledField("Password (required)", lanControlPassword, { lanControlPassword = it }, isPassword = true)
-            TextButton(onClick = { viewModel.setLanControl(state.lanControlEnabled, lanControlPassword) }) {
+            TextButton(onClick = {
+                viewModel.setLanControl(state.lanControlEnabled, lanControlPassword)
+                viewModel.confirmSaved(
+                    if (state.lanControlEnabled && lanControlPassword.isBlank()) {
+                        "LAN control stays off without a password"
+                    } else {
+                        "LAN control settings saved"
+                    },
+                )
+            }) {
                 Text("SAVE LAN CONTROL SETTINGS", style = Winamp.labelStyle, color = Winamp.Amber)
             }
             LanControlStatusRow(viewModel)

@@ -57,6 +57,25 @@ class SettingsViewModel @Inject constructor(
     private val _avrDiscovery = MutableStateFlow<AvrDiscoveryUiState>(AvrDiscoveryUiState.Idle)
     val avrDiscovery: StateFlow<AvrDiscoveryUiState> = _avrDiscovery.asStateFlow()
 
+    /**
+     * Every "SAVE ..." button on this screen wrote something and then gave no sign of it - reported
+     * live (2026-10-10) against the Plex section specifically, but every section here has the same
+     * gap, so this is one mechanism for all of them rather than a Plex-only patch. Set from
+     * [SettingsScreen]'s own click handlers right after the real write, not from inside each setter:
+     * every setter here is a DataStore/SecretStore write with no failure path exposed to the UI, so
+     * there is nothing more precise worth waiting on.
+     */
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message.asStateFlow()
+
+    fun confirmSaved(label: String) {
+        _message.value = label
+    }
+
+    fun dismissMessage() {
+        _message.value = null
+    }
+
     init {
         // Idempotent - PlayerViewModel is the primary place this gets kicked off, but Settings
         // shouldn't depend on load order to show accurate LAN control status.

@@ -10,12 +10,17 @@ for the current state, and the last section for what happened most recently.
 
 ## Where the work stands
 
-**Shipping.** v0.1.27 (`versionCode` 28) is published to GitHub Releases and the in-app updater
+**Shipping.** v0.1.28 (`versionCode` 29) is published to GitHub Releases and the in-app updater
 offers it. (The version moves often; `app/build.gradle.kts` is the authority, not this line, and the
 About tab's CHANGELOG is the authority for what each version changed.) All six phases in
 [`plan.md`](plan.md) are done and were verified end-to-end against the real AVR-X4500H. Everything
 since then is listed below, newest first, with what was and was not checked on real hardware.
 
+- **0.1.28** - Two bugs from the first real use of 0.1.27, see the 2026-10-11 entry below for the
+  full story: Settings' five "SAVE ..." buttons now confirm (or say why a save didn't happen),
+  and the Playlists tab picks up a newly saved Plex server/token immediately instead of needing an
+  app restart (`PlaylistsViewModel.refreshOnReentry`, replacing the narrower
+  `refreshSelectedIfOpen`-only fix from 0.1.27's own release day).
 - **0.1.27** - A Playlists tab for Plex's own playlists (play only), verified end-to-end
   against real hardware (2026-10-10, see that date's entry below). `:core:plex` is a new pure-JVM
   module (an HTTP client over Plex Media Server's own API, port 32400 - not the receiver) because
@@ -1083,3 +1088,36 @@ Also fixed in passing: `PlaylistsViewModel` does not currently invalidate `selec
 index changes underneath it (a reindex finishing while a playlist is open would show the same stale
 state the accidental test above hit). Not fixed yet - noted here since it was found live, not in the
 diff that caused it.
+
+## Two reports from the first real use of 0.1.27, both the same shape (2026-10-11)
+
+Live feedback after the release: "no confirmation when I pressed save Plex settings" and "when I
+went back to Playlists, it still said I had to enter Plex info - I had to restart the app for it to
+work." Both were real, and both came from the same underlying cause as the `selected`-staleness bug
+found the day before (see 2026-10-10 above): a screen that trusts state a long-lived ViewModel set
+once, with nothing telling it to look again later.
+
+**No save confirmation** turned out not to be Plex-specific - none of Settings' five "SAVE ..."
+buttons (Receiver, SMB, Plex, Auto-dim, LAN control) said anything on success, so fixing only the one
+reported would have left four others still silent and inconsistent with the one that wasn't.
+`SettingsViewModel` gained a `message`/`confirmSaved` pair, the same snackbar mechanism Search and
+Playlists already use; each save button's `onClick` calls it right after the real write, since none
+of these writes have a failure path exposed to the UI to wait on properly. The Plex button's message
+also now distinguishes "saved" from "you left a field blank" - previously the same tap just did
+nothing in the latter case, with no hint why.
+
+**The restart requirement** was `PlaylistsViewModel.refresh()` only ever running once, in `init {}`.
+Fixing `refreshSelectedIfOpen` the day before only covered the *selected playlist* going stale, not
+the *playlist list itself* - saving Plex credentials for the first time and switching to the
+Playlists tab hit exactly this: `refresh()` had already run once against the not-yet-configured
+state, and nothing re-ran it. Replaced with `refreshOnReentry()` (`refresh()` + `refreshSelectedIfOpen()`
+together), called from `PlaylistsScreen`'s `LaunchedEffect(Unit)` on every tab entry, not just the
+first. Verified live: saved Plex settings (snackbar appeared), switched straight to Playlists with no
+restart, and all 7 playlists loaded correctly on the first try.
+
+Worth noting for whichever model or session touches this next: this is the *second* time a
+survives-tab-switches ViewModel has shown stale state because something changed in a different tab
+while it wasn't looking. If a third one shows up, it's probably not a one-off anymore - consider
+whether `PlaylistsViewModel` (or the pattern generally) needs a more structural fix, like observing
+`SettingsRepository.settings` and `SearchIndexDao` changes directly instead of only re-checking on
+re-entry.
