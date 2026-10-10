@@ -53,6 +53,10 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.30" to listOf(
+        "You can now add whatever's currently playing to a Plex playlist too - a new button next " +
+            "to Now Playing's title.",
+    ),
     "0.1.29" to listOf(
         "You can now add a track to one of your Plex playlists: long-press it in Search and pick " +
             "\"Add to Plex playlist...\". If the same song exists more than once in your library, " +

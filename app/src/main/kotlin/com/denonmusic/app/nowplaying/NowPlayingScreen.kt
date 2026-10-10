@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Pause
@@ -28,10 +29,13 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +51,7 @@ import com.denonmusic.app.player.PlayerViewModel
 import com.denonmusic.app.player.icon
 import com.denonmusic.app.player.next
 import com.denonmusic.app.player.summary
+import com.denonmusic.app.playlists.PlaylistPickerDialog
 import com.denonmusic.app.ui.LocalArtwork
 import com.denonmusic.app.ui.RemoteArtwork
 import com.denonmusic.app.ui.Winamp
@@ -60,15 +65,41 @@ import java.util.Locale
 @Composable
 fun NowPlayingScreen(playerViewModel: PlayerViewModel, onBack: () -> Unit) {
     val state by playerViewModel.uiState.collectAsState()
+    val playlistPicker by playerViewModel.playlistPicker.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // state.message is shared across every screen that observes PlayerViewModel (it lives on
+    // PlayerStateTracker, not here - see PlayerUiState's own doc), but until now nothing on this
+    // particular screen produced one: this screen had no snackbar host at all, so
+    // confirmAddCurrentTrackToPlaylist's own message would have been invisible here, landing only if
+    // the user happened to also be looking at the Queue tab, which owns the only other LaunchedEffect
+    // watching it.
+    LaunchedEffect(state.message) {
+        state.message?.let {
+            snackbarHostState.showSnackbar(it)
+            playerViewModel.dismissMessage()
+        }
+    }
 
     Scaffold(
         containerColor = Winamp.Background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("N O W   P L A Y I N G", style = Winamp.titleStyle) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Winamp.Green)
+                    }
+                },
+                actions = {
+                    // No artist/album to match a bridge-mode track against Plex with - see
+                    // startAddCurrentTrackToPlaylist's own doc - so the action isn't offered at all
+                    // rather than failing every time it's tapped.
+                    if (!state.isBridgeModeActive && state.nowPlaying != null) {
+                        IconButton(onClick = playerViewModel::startAddCurrentTrackToPlaylist) {
+                            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Add to Plex playlist", tint = Winamp.Green)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -237,6 +268,15 @@ fun NowPlayingScreen(playerViewModel: PlayerViewModel, onBack: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (playlistPicker.isOpen) {
+        PlaylistPickerDialog(
+            playlists = playlistPicker.playlists,
+            isLoading = playlistPicker.isLoading,
+            onPick = playerViewModel::confirmAddCurrentTrackToPlaylist,
+            onDismiss = playerViewModel::cancelAddToPlaylist,
+        )
     }
 }
 

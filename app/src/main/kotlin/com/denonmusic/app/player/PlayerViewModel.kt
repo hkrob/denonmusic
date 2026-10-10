@@ -7,6 +7,7 @@ import com.denonmusic.app.bridge.BridgeQueueController
 import com.denonmusic.app.bridge.BridgeQueueState
 import com.denonmusic.app.heos.HeosPlaybackStarter
 import com.denonmusic.app.heos.HeosSession
+import com.denonmusic.app.playlists.AddToPlaylistOutcome
 import com.denonmusic.app.playlists.PlaylistRepository
 import com.denonmusic.app.playlists.PlexLookupTrack
 import com.denonmusic.avr.SignalType
@@ -14,8 +15,11 @@ import com.denonmusic.heos.NowPlaying
 import com.denonmusic.heos.PlayState
 import com.denonmusic.heos.QueueItem
 import com.denonmusic.heos.RepeatMode
+import com.denonmusic.plex.PlexPlaylist
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -99,6 +103,13 @@ data class PlayerUiState(
         get() = bridgeQueue.currentItem != null
 }
 
+/** See [PlayerViewModel.playlistPicker]. */
+data class PlaylistPickerUiState(
+    val isOpen: Boolean = false,
+    val isLoading: Boolean = false,
+    val playlists: List<PlexPlaylist> = emptyList(),
+)
+
 /**
  * A screen's view of "the currently selected HEOS player", shared by Browse, Now Playing and Queue:
  * what's playing, transport state, and the live queue, plus the actions those screens can take.
@@ -126,6 +137,15 @@ class PlayerViewModel @Inject constructor(
      * the actions a screen can take.
      */
     val uiState: StateFlow<PlayerUiState> = tracker.state
+
+    /**
+     * Whether to show [com.denonmusic.app.playlists.PlaylistPickerDialog] for the currently playing
+     * track, and what to fill it with - kept apart from [tracker]'s state rather than added there,
+     * since this is purely this screen's own transient UI state (which dialog is open right now),
+     * not anything the notification or another screen needs to agree on.
+     */
+    private val _playlistPicker = MutableStateFlow(PlaylistPickerUiState())
+    val playlistPicker: StateFlow<PlaylistPickerUiState> = _playlistPicker.asStateFlow()
 
     init {
         tracker.attach(fromUi = true)
@@ -320,6 +340,49 @@ class PlayerViewModel @Inject constructor(
                     tracker.update { it.copy(message = "Created Plex playlist \"${outcome.playlist.title}\"$note") }
                 }
                 .onFailure { e -> tracker.update { it.copy(message = e.message ?: "Couldn't create Plex playlist") } }
+        }
+    }
+
+    /**
+     * Opens [com.denonmusic.app.playlists.PlaylistPickerDialog] for whatever's currently playing and
+     * loads the playlist list to fill it with. Bridge-mode playback has no artist/album to match on
+     * (see [BridgeQueueItem][com.denonmusic.app.bridge.BridgeQueueItem] - just a display name), so
+     * this is a no-op there; [NowPlayingScreen][com.denonmusic.app.nowplaying.NowPlayingScreen]
+     * doesn't show the action at all in that mode, for the same reason.
+     */
+    fun startAddCurrentTrackToPlaylist() {
+        if (tracker.state.value.nowPlaying == null) return
+        _playlistPicker.value = PlaylistPickerUiState(isOpen = true, isLoading = true)
+        viewModelScope.launch {
+            playlistRepository.listPlaylists()
+                .onSuccess { playlists -> _playlistPicker.value = _playlistPicker.value.copy(isLoading = false, playlists = playlists) }
+                .onFailure { e ->
+                    _playlistPicker.value = PlaylistPickerUiState()
+                    tracker.update { it.copy(message = e.message ?: "Couldn't load Plex playlists") }
+                }
+        }
+    }
+
+    fun cancelAddToPlaylist() {
+        _playlistPicker.value = PlaylistPickerUiState()
+    }
+
+    fun confirmAddCurrentTrackToPlaylist(playlist: PlexPlaylist) {
+        val np = tracker.state.value.nowPlaying
+        _playlistPicker.value = PlaylistPickerUiState()
+        if (np == null) return
+        viewModelScope.launch {
+            val track = PlexLookupTrack(np.song, np.artist, np.album)
+            playlistRepository.addTrackToPlaylist(playlist, track)
+                .onSuccess { outcome ->
+                    val text = when (outcome) {
+                        AddToPlaylistOutcome.Added -> "Added \"${np.song}\" to ${playlist.title}"
+                        AddToPlaylistOutcome.Ambiguous -> "Couldn't tell which Plex track this is - more than one matched"
+                        AddToPlaylistOutcome.NotFoundInPlex -> "Couldn't find \"${np.song}\" in your Plex library"
+                    }
+                    tracker.update { it.copy(message = text) }
+                }
+                .onFailure { e -> tracker.update { it.copy(message = e.message ?: "Couldn't add to playlist") } }
         }
     }
 

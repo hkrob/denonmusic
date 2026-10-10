@@ -40,13 +40,14 @@ Two notes about tooling:
   - An emulator is the right tool for anything version-specific. The physical test phone is old
     and cannot reach most modern Android behaviour; assuming otherwise has cost releases before.
 
-Current state: v0.1.29 (versionCode 30), branch claude/android-smb-denon-player-9710bx (also the
+Current state: v0.1.30 (versionCode 31), branch claude/android-smb-denon-player-9710bx (also the
 default branch), 282 unit tests passing. Features since v0.1.18 are volume keys (0.1.22), seek
 (0.1.23, 0.1.24), whole-library Search with a foreground-service indexer (0.1.25, 0.1.26), and a
 Playlists tab for Plex's own playlists (0.1.27 play only; 0.1.28 fixed two stale-state bugs found
-on first real use; 0.1.29 added add-to-playlist and create-from-queue - remove/reorder/rename/
-delete are still open, see below). The "Where the work stands" section of docs/local-setup.md has
-the detail, including what has and hasn't been verified on a phone.
+on first real use; 0.1.29 added add-to-playlist and create-from-queue; 0.1.30 added add-to-playlist
+from Now Playing too - remove/reorder/rename/delete are still open, see below). The "Where the work
+stands" section of docs/local-setup.md has the detail, including what has and hasn't been verified
+on a phone.
 
 Nothing is urgently broken. Report what the checks say, and don't start work until I've picked
 something.
@@ -64,9 +65,9 @@ public. Read that alongside this file when actually moving.
 
 Nothing here is a known defect. In rough order of usefulness:
 
-- **Plex playlist editing**: add-to-playlist and create-from-queue shipped in 0.1.29.
-  Remove/reorder/rename/delete are still not implemented. The add-to-playlist entry is only in
-  Search's long-press menu, not Browse's or Playlists' own track rows yet.
+- **Plex playlist editing**: add-to-playlist (0.1.29, Search; 0.1.30, Now Playing too) and
+  create-from-queue (0.1.29) shipped. Remove/reorder/rename/delete are still not implemented.
+  Browse's and Playlists' own track rows don't have the add-to-playlist entry yet.
 - The multi-part **"Play now"** path (`aid=1` with more than one target) was never measured. The
   replace-and-play path beside it turned out to lose both its replace and its play when another add
   followed, so this one deserves the same scepticism before it is trusted.

@@ -10,12 +10,16 @@ for the current state, and the last section for what happened most recently.
 
 ## Where the work stands
 
-**Shipping.** v0.1.29 (`versionCode` 30) is published to GitHub Releases and the in-app updater
+**Shipping.** v0.1.30 (`versionCode` 31) is published to GitHub Releases and the in-app updater
 offers it. (The version moves often; `app/build.gradle.kts` is the authority, not this line, and the
 About tab's CHANGELOG is the authority for what each version changed.) All six phases in
 [`plan.md`](plan.md) are done and were verified end-to-end against the real AVR-X4500H. Everything
 since then is listed below, newest first, with what was and was not checked on real hardware.
 
+- **0.1.30** - A third add-to-playlist entry point: the currently playing track, from a new icon on
+  Now Playing's top bar. See the 2026-10-11 "Add the currently playing track" entry below - reuses
+  everything 0.1.29 built, and found live that `NowPlayingScreen` had no snackbar host at all before
+  this, so every `PlayerViewModel` message was invisible there until now.
 - **0.1.29** - Add-to-playlist and create-from-queue, the second pass 0.1.27's own doc said was
   deferred. See the 2026-10-11 "Playlist editing" entry below for the real-server
   verification this was built against and the live test (a throwaway playlist, created, added to,
@@ -73,9 +77,9 @@ notification (including after the app's task is swiped away).
   `:core:plex` and `:core:data` (counted from the JUnit XML, 2026-10-11). `ktlintCheck` and
   `:app:lintDebug` clean, `:app:assembleDebug` builds.
 - Open, in order of usefulness: remove/reorder/rename/delete on a Plex playlist are still not
-  implemented (add-to-playlist and create-from-queue are, as of the in-progress entry above); the
-  add-to-playlist entry isn't wired into Browse's or Playlists' own track rows yet, only Search's;
-  per-folder retry inside `LibraryIndexer` and incremental search-index persistence are both
+  implemented. The add-to-playlist entry is in Search and Now Playing; Browse's and Playlists' own
+  track rows don't have it yet. Per-folder retry inside `LibraryIndexer` and incremental
+  search-index persistence are both
   deliberately deferred until a report needs them (see the 2026-10-02 entry).
 - Screenshots for the README are not yet in the repo. See "Emulator and screenshots" below for the
   recipe and the blocker that stopped the capture on 2026-10-06.
@@ -1182,3 +1186,27 @@ playlist, not the user's real ones:
 
 282 tests (was 272: 6 new `PlexClientTest` cases for the write methods, 4 new
 `resolveLibraryTrack` cases), 0 failures. ktlint and `:app:lintDebug` clean.
+
+## Add the currently playing track to a Plex playlist (2026-10-11)
+
+Asked for a third add-to-playlist entry point: the track already playing, not just a Search result
+or the whole queue. Reused everything from the 0.1.29 Search integration -
+`PlaylistRepository.addTrackToPlaylist`, `PlexLookupTrack`, `PlaylistPickerDialog` - wired onto a new
+icon button in `NowPlayingScreen`'s top bar (`PlayerViewModel.startAddCurrentTrackToPlaylist`/
+`confirmAddCurrentTrackToPlaylist`, with their own small `PlaylistPickerUiState` kept apart from
+`PlayerStateTracker`'s shared state, since which dialog is open is this screen's business, not the
+notification's or another screen's). Hidden entirely in bridge mode: a bridge-queue item is only a
+display name (see `BridgeQueueItem`), with no artist/album to narrow a Plex match by, so offering the
+action there would just fail every time rather than ever working.
+
+Found live, not in review: `NowPlayingScreen` had no `SnackbarHost` at all before this - every
+`PlayerViewModel` action's result message (`tracker.state.value.message`) was only ever shown by
+`QueueScreen`'s own `LaunchedEffect`, so a message raised while looking at Now Playing was invisible
+unless the user happened to also be on the Queue tab. Added one here too, same pattern.
+
+Verified live against a throwaway test playlist (created, added to, read back, deleted - same as
+every other write-path check in this project): added the actual track playing at the time, "Love 2
+The 9's" (Prince, *Diamonds & Love vol.02*), and confirmed by reading the playlist back from Plex
+directly that `ratingKey 32732` landed - the same ratingKey this exact track resolved to in an
+earlier, independent check (the 2026-10-10 "2026 Drive" verification). Account's real 7 playlists
+unchanged afterward.
