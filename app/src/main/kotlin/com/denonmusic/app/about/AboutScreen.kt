@@ -53,6 +53,13 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.29" to listOf(
+        "You can now add a track to one of your Plex playlists: long-press it in Search and pick " +
+            "\"Add to Plex playlist...\". If the same song exists more than once in your library, " +
+            "it tells you rather than guessing which one.",
+        "New \"PLEX\" button on the Queue screen creates a new Plex playlist from whatever's " +
+            "currently queued.",
+    ),
     "0.1.28" to listOf(
         "Fixed: saving settings (Plex, receiver, SMB, LAN control, display) gave no sign anything " +
             "happened. Every SAVE button now confirms, or says why it couldn't.",

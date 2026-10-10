@@ -10,14 +10,14 @@ for the current state, and the last section for what happened most recently.
 
 ## Where the work stands
 
-**Shipping.** v0.1.28 (`versionCode` 29) is published to GitHub Releases and the in-app updater
+**Shipping.** v0.1.29 (`versionCode` 30) is published to GitHub Releases and the in-app updater
 offers it. (The version moves often; `app/build.gradle.kts` is the authority, not this line, and the
 About tab's CHANGELOG is the authority for what each version changed.) All six phases in
 [`plan.md`](plan.md) are done and were verified end-to-end against the real AVR-X4500H. Everything
 since then is listed below, newest first, with what was and was not checked on real hardware.
 
-- **In progress, not yet released: add-to-playlist and create-from-queue, the second pass 0.1.27's
-  own doc said was deferred.** See the 2026-10-11 "Playlist editing" entry below for the real-server
+- **0.1.29** - Add-to-playlist and create-from-queue, the second pass 0.1.27's own doc said was
+  deferred. See the 2026-10-11 "Playlist editing" entry below for the real-server
   verification this was built against and the live test (a throwaway playlist, created, added to,
   read back, then deleted) that confirmed it end to end. "Add to Plex playlist…" is wired into
   Search's long-press menu; a new "PLEX" button on the Queue screen creates a playlist from the

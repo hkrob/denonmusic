@@ -181,7 +181,8 @@ What the app does today:
 - **Playlists** (0.1.27): plays your own Plex playlists, read straight from Plex's API since the
   receiver's HEOS/DLNA connection can't see them at all - still queued through the real HEOS queue,
   never streamed through the phone, and a song matched more than once in your library is flagged for
-  you to pick rather than guessed at. Play only for now; editing a Plex playlist isn't implemented.
+  you to pick rather than guessed at. Add a track to one from Search's long-press menu, or create a
+  new one from the current Queue (0.1.29); remove/reorder/rename/delete aren't implemented yet.
 - **Seek** within the current track from the progress bar, the lock screen and Bluetooth/Android
   Auto controls (0.1.23, 0.1.24). Uses the receiver's UPnP transport, since HEOS has no seek command.
 - **Hardware volume keys** control the receiver's volume while the app is open (0.1.22).
