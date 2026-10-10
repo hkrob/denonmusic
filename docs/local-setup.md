@@ -24,12 +24,14 @@ since then is listed below, newest first, with what was and was not checked on r
   eight views have no `Playlists` among them anywhere. A Plex playlist's tracks are matched by
   (artist, album, title) against the existing Search index (`SearchIndexDao.findTrack`) to recover
   HEOS `sid/cid/mid`, then queued through the same `HeosPlaybackStarter.addAll` Browse's "Play All"
-  already uses - so this still never streams audio through the phone. Confirmed on the real phone and
-  Plex server: `PlexClient`'s JSON parsing needed no changes against a real response; a real
-  20-track user playlist matched 20/20 once the Search index actually had something in it; "Add All"
-  appended all 20, in order, with correct artist/album, to the real HEOS queue. Editing
-  (add/remove/reorder, create/delete) is out of scope for this slice - see `PlaylistRepository`'s own
-  doc for the shape a second pass would take.
+  already uses - so this still never streams audio through the phone. A second, equally real outcome
+  (`ResolvedTrack.Ambiguous`) exists for when more than one indexed track matches - see the
+  2026-10-10 entry below for why that turned out to matter on a real library, not just in theory.
+  Confirmed on the real phone and Plex server: `PlexClient`'s JSON parsing needed no changes against
+  a real response; a real 20-track user playlist resolved 17 confidently and flagged 3 as ambiguous
+  (never silently guessed); "Add All" queued the 17, in order, with correct artist/album, onto the
+  real HEOS queue. Editing (add/remove/reorder, create/delete) is out of scope for this slice - see
+  `PlaylistRepository`'s own doc for the shape a second pass would take.
 - **0.1.26** - Search indexing made reliable on large libraries. The crawl runs as a foreground
   service (`SearchIndexService`), so Android does not kill it when the app leaves the screen. A
   transport failure retries the whole crawl up to three times; an uncaught exception no longer
@@ -1062,13 +1064,22 @@ with parenthetical suffixes Plex stores as part of the track title (`"4 the Tear
 ('We Are the World' version)"`, `"Juke-Joint Jezebel (original single edit)"`) matched exactly,
 since both sides ultimately come from the same Plex metadata.
 
-One real duplicate worth knowing about, not a bug: this playlist has two different library entries
-both titled "Around the World in a Day" by Prince on the album "Around the World in a Day"
-(`ratingKey`s 26644 and 1630, durations 208346ms vs 208040ms - a genuine Plex-side duplicate, not a
-parsing artefact). `SearchIndexDao.findTrack` has no duration tie-break, so this resolves to
-whichever the index returns first; it queued *a* version, not necessarily the one Plex's playlist
-entry actually points to. Left as the known gap that doc already called out, now with a concrete
-example instead of a hypothetical one.
+One real duplicate surfaced this playlist has two different library entries both titled "Around the
+World in a Day" by Prince on the album "Around the World in a Day" (`ratingKey`s 26644 and 1630,
+durations 208346ms vs 208040ms - a genuine Plex-side duplicate, not a parsing artefact). The user
+pointed out, correctly, that this is normal for a real library, not a rare edge case worth a footnote
+- so rather than leave `findTrack`'s "no duration tie-break" as a documented gap that silently queues
+*a* version and calls it done, `PlaylistRepository.resolve` now has a third outcome,
+`ResolvedTrack.Ambiguous`, for when more than one indexed row matches. Ambiguous tracks are excluded
+from `matchedTargets` - a bulk "Play All"/"Add All" never guesses - and shown distinctly in the UI
+(amber, "N AMBIGUOUS - LONG-PRESS TO PICK"), with a long-press menu listing each candidate by ordinal
+("Play version 1 of 3", etc. - there's no per-candidate label to show, since a track row's indexed
+path isn't kept; see `SearchIndexEntity`'s own doc on why). Reinstalled and reverified on the same
+phone: this exact playlist turned out to have **three** ambiguous tracks, not the one found by
+inspection - "Around the World in a Day" and "Wildfire" (John Mayer) both flagged correctly, and the
+long-press menu on "Around the World in a Day" listed three real candidates (not two - there's a
+third physical file in the HEOS index sharing that exact artist/album/title). `PlaylistRepositoryTest`
+(new) pins the decision logic (0/1/many candidates) without needing a database.
 
 Also fixed in passing: `PlaylistsViewModel` does not currently invalidate `selected` when the Search
 index changes underneath it (a reindex finishing while a playlist is open would show the same stale

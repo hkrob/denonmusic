@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.denonmusic.app.browse.QueueAction
 import com.denonmusic.app.ui.Winamp
+import com.denonmusic.heos.QueueTarget
+import com.denonmusic.plex.PlexPlaylistItem
 
 /**
  * Plex's own playlists, read straight from the Plex Media Server HTTP API - the receiver's HEOS/
@@ -136,7 +138,7 @@ fun PlaylistsScreen(viewModel: PlaylistsViewModel = hiltViewModel()) {
 private fun PlaylistDetail(
     resolved: ResolvedPlaylist,
     onPlayAll: (QueueAction) -> Unit,
-    onQueueTrack: (ResolvedTrack.Matched, QueueAction) -> Unit,
+    onQueueTrack: (PlexPlaylistItem, QueueTarget, QueueAction) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -145,14 +147,19 @@ private fun PlaylistDetail(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val unmatched = resolved.tracks.count { it is ResolvedTrack.Unmatched }
+            val ambiguous = resolved.tracks.count { it is ResolvedTrack.Ambiguous }
+            // Named separately from "not in index": an ambiguous track IS in the index, twice over,
+            // which is a different thing to tell the user than "nothing found" - conflating the two
+            // would hide exactly the case PLAY ALL/ADD ALL most need flagged, since both silently
+            // skip ambiguous tracks the same way they skip unmatched ones (see matchedTargets).
+            val notes = buildList {
+                if (unmatched > 0) add("$unmatched NOT IN HEOS INDEX")
+                if (ambiguous > 0) add("$ambiguous AMBIGUOUS - LONG-PRESS TO PICK")
+            }
             Text(
-                if (unmatched == 0) {
-                    "${resolved.tracks.size} TRACKS"
-                } else {
-                    "${resolved.tracks.size} TRACKS, $unmatched NOT IN HEOS INDEX"
-                },
+                if (notes.isEmpty()) "${resolved.tracks.size} TRACKS" else "${resolved.tracks.size} TRACKS, ${notes.joinToString(", ")}",
                 style = Winamp.smallStyle,
-                color = if (unmatched == 0) Winamp.GreenDim else Winamp.Amber,
+                color = if (notes.isEmpty()) Winamp.GreenDim else Winamp.Amber,
                 modifier = Modifier.weight(1f),
             )
             TextButton(onClick = { onPlayAll(QueueAction.ReplaceAndPlay) }) {
@@ -170,23 +177,34 @@ private fun PlaylistDetail(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PlaylistTrackRow(track: ResolvedTrack, onQueueTrack: (ResolvedTrack.Matched, QueueAction) -> Unit) {
+private fun PlaylistTrackRow(track: ResolvedTrack, onQueueTrack: (PlexPlaylistItem, QueueTarget, QueueAction) -> Unit) {
     var menuExpanded by remember { mutableStateOf(false) }
     val matched = track as? ResolvedTrack.Matched
+    val ambiguous = track as? ResolvedTrack.Ambiguous
+    // A row is interactive (tap or long-press) only once resolution is unambiguous in some way:
+    // Matched (one candidate - the normal case) or Ambiguous (several - long-press picks one).
+    // Unmatched has nothing to queue at all, so it stays inert, same as it always has.
+    val color = when (track) {
+        is ResolvedTrack.Matched -> Winamp.Green
+        is ResolvedTrack.Ambiguous -> Winamp.Amber
+        is ResolvedTrack.Unmatched -> Winamp.GreenDim
+    }
     Box {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    enabled = matched != null,
-                    onClick = { matched?.let { onQueueTrack(it, QueueAction.PlayNow) } },
-                    onLongClick = { if (matched != null) menuExpanded = true },
+                    enabled = matched != null || ambiguous != null,
+                    onClick = { matched?.let { onQueueTrack(it.item, it.target, QueueAction.PlayNow) } },
+                    onLongClick = {
+                        if (matched != null || ambiguous != null) menuExpanded = true
+                    },
                 )
                 .padding(horizontal = 16.dp, vertical = 10.dp),
         ) {
-            Icon(Icons.Filled.MusicNote, contentDescription = null, tint = if (matched != null) Winamp.Green else Winamp.GreenDim)
+            Icon(Icons.Filled.MusicNote, contentDescription = null, tint = color)
             Column(modifier = Modifier.padding(start = 12.dp)) {
-                Text(track.item.title, style = Winamp.labelStyle, color = if (matched != null) Winamp.Green else Winamp.GreenDim)
+                Text(track.item.title, style = Winamp.labelStyle, color = color)
                 val subtitle = listOfNotNull(track.item.artist, track.item.album).joinToString(" — ")
                 if (subtitle.isNotEmpty()) Text(subtitle, style = Winamp.smallStyle)
             }
@@ -198,7 +216,24 @@ private fun PlaylistTrackRow(track: ResolvedTrack, onQueueTrack: (ResolvedTrack.
                         text = { Text(action.label) },
                         onClick = {
                             menuExpanded = false
-                            onQueueTrack(matched, action)
+                            onQueueTrack(matched.item, matched.target, action)
+                        },
+                    )
+                }
+            }
+        }
+        if (ambiguous != null) {
+            // No per-candidate label to show (a track row's indexed path isn't kept - see
+            // SearchIndexEntity's own doc), so these are only numbered, not described. Picking one
+            // plays it immediately rather than opening a second QueueAction menu per candidate - the
+            // point here is "let me hear which one this is", not the full menu a confident match gets.
+            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                ambiguous.candidates.forEachIndexed { index, candidate ->
+                    DropdownMenuItem(
+                        text = { Text("Play version ${index + 1} of ${ambiguous.candidates.size}") },
+                        onClick = {
+                            menuExpanded = false
+                            onQueueTrack(ambiguous.item, candidate, QueueAction.PlayNow)
                         },
                     )
                 }

@@ -5,7 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.denonmusic.app.browse.QueueAction
 import com.denonmusic.app.heos.HeosPlaybackStarter
 import com.denonmusic.app.heos.HeosSession
+import com.denonmusic.heos.QueueTarget
 import com.denonmusic.plex.PlexPlaylist
+import com.denonmusic.plex.PlexPlaylistItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -101,7 +103,12 @@ class PlaylistsViewModel @Inject constructor(
         }
     }
 
-    fun queueTrack(track: ResolvedTrack.Matched, action: QueueAction) {
+    /**
+     * [target] is whichever one the caller already resolved to a single queueable track - either
+     * [ResolvedTrack.Matched]'s own target, or one candidate the user picked off
+     * [ResolvedTrack.Ambiguous] - this doesn't need to know which.
+     */
+    fun queueTrack(item: PlexPlaylistItem, target: QueueTarget, action: QueueAction) {
         val client = session.heosClient ?: return
         viewModelScope.launch {
             val playerId = session.resolvePid() ?: run {
@@ -112,15 +119,15 @@ class PlaylistsViewModel @Inject constructor(
                 playbackStarter.addToQueue(
                     client = client,
                     pid = playerId,
-                    sid = track.target.sid,
-                    cid = track.target.cid,
-                    mid = track.target.mid,
+                    sid = target.sid,
+                    cid = target.cid,
+                    mid = target.mid,
                     criteria = action.criteria,
                 )
             }.onFailure { e ->
                 _uiState.value = _uiState.value.copy(message = e.message ?: "Queue action failed")
             }.onSuccess {
-                _uiState.value = _uiState.value.copy(message = "${action.label}: ${track.item.title}")
+                _uiState.value = _uiState.value.copy(message = "${action.label}: ${item.title}")
             }
         }
     }
