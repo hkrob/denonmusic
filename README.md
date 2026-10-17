@@ -183,7 +183,8 @@ What the app does today:
   never streamed through the phone, and a song matched more than once in your library is flagged for
   you to pick rather than guessed at. Add a track to one from Search's long-press menu or Now
   Playing (0.1.29, 0.1.30), or create a new one from the current Queue (0.1.29);
-  remove/reorder/rename/delete aren't implemented yet.
+  remove/reorder/rename/delete aren't implemented yet. (0.1.31 fixed a bug in the Now Playing
+  entry point where the wrong track could be added if playback moved on while the picker was open.)
 - **Seek** within the current track from the progress bar, the lock screen and Bluetooth/Android
   Auto controls (0.1.23, 0.1.24). Uses the receiver's UPnP transport, since HEOS has no seek command.
 - **Hardware volume keys** control the receiver's volume while the app is open (0.1.22).

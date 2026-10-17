@@ -40,12 +40,13 @@ Two notes about tooling:
   - An emulator is the right tool for anything version-specific. The physical test phone is old
     and cannot reach most modern Android behaviour; assuming otherwise has cost releases before.
 
-Current state: v0.1.30 (versionCode 31), branch claude/android-smb-denon-player-9710bx (also the
+Current state: v0.1.31 (versionCode 32), branch claude/android-smb-denon-player-9710bx (also the
 default branch), 282 unit tests passing. Features since v0.1.18 are volume keys (0.1.22), seek
 (0.1.23, 0.1.24), whole-library Search with a foreground-service indexer (0.1.25, 0.1.26), and a
 Playlists tab for Plex's own playlists (0.1.27 play only; 0.1.28 fixed two stale-state bugs found
 on first real use; 0.1.29 added add-to-playlist and create-from-queue; 0.1.30 added add-to-playlist
-from Now Playing too - remove/reorder/rename/delete are still open, see below). The "Where the work
+from Now Playing too; 0.1.31 fixed a bug in that last one, found by a `/code-review` pass rather
+than a user report - remove/reorder/rename/delete are still open, see below). The "Where the work
 stands" section of docs/local-setup.md has the detail, including what has and hasn't been verified
 on a phone.
 

@@ -10,12 +10,26 @@ for the current state, and the last section for what happened most recently.
 
 ## Where the work stands
 
-**Shipping.** v0.1.30 (`versionCode` 31) is published to GitHub Releases and the in-app updater
+**Shipping.** v0.1.31 (`versionCode` 32) is published to GitHub Releases and the in-app updater
 offers it. (The version moves often; `app/build.gradle.kts` is the authority, not this line, and the
 About tab's CHANGELOG is the authority for what each version changed.) All six phases in
 [`plan.md`](plan.md) are done and were verified end-to-end against the real AVR-X4500H. Everything
 since then is listed below, newest first, with what was and was not checked on real hardware.
 
+- **0.1.31** - Bug fix, found by a `/code-review` pass run right after 0.1.30 shipped, not by a user
+  report: `confirmAddCurrentTrackToPlaylist` read the *live* `PlayerStateTracker.nowPlaying` at
+  confirm time rather than the track that was playing when the picker opened, so if playback moved
+  on while the picker was loading playlists (a network round trip) or the user was still deciding,
+  the wrong track got added - silently, with a success message that looked correct either way.
+  Fixed by capturing the target in `PlaylistPickerUiState.target` when the dialog opens (the same
+  shape `SearchUiState.addToPlaylistTarget` already used), and reading only that at confirm time.
+  Also fixed a smaller gap the same review flagged: if `nowPlaying` had gone null by confirm time
+  (receiver dropped, player registry empty - see `noHeosPlayerFound`), the dialog just closed with
+  no message at all; it now says so. **Not verified on real hardware** - `PlayerViewModel` has no
+  unit test harness at all (same as before this fix; it's exercised live, not by a suite), and
+  reproducing the race live would mean timing a track change against a network call precisely
+  enough to be impractical to stage - the fix was checked by code inspection plus the existing
+  compile/lint/test suite, which cannot catch the timing itself.
 - **0.1.30** - A third add-to-playlist entry point: the currently playing track, from a new icon on
   Now Playing's top bar. See the 2026-10-11 "Add the currently playing track" entry below - reuses
   everything 0.1.29 built, and found live that `NowPlayingScreen` had no snackbar host at all before
@@ -1210,3 +1224,25 @@ The 9's" (Prince, *Diamonds & Love vol.02*), and confirmed by reading the playli
 directly that `ratingKey 32732` landed - the same ratingKey this exact track resolved to in an
 earlier, independent check (the 2026-10-10 "2026 Drive" verification). Account's real 7 playlists
 unchanged afterward.
+
+## Stale-track bug in 0.1.30's add-current-track, found by `/code-review` (2026-10-17)
+
+Ran a code review right after 0.1.30 shipped, not prompted by a user report. It found that
+`PlayerViewModel.confirmAddCurrentTrackToPlaylist` read `tracker.state.value.nowPlaying` - the
+*live* now-playing state - at confirm time, instead of the track that was actually playing when the
+user opened the picker. `startAddCurrentTrackToPlaylist` kicks off a network call
+(`playlistRepository.listPlaylists()`) before the dialog has anything to show, and the user then has
+to pick a playlist on top of that - plenty of time for playback to move on. If it did, the wrong
+track got added, silently, with a success snackbar indistinguishable from the correct case. The
+identical-looking `SearchViewModel.confirmAddToPlaylist` didn't have this bug, because it already
+captured its target (`SearchUiState.addToPlaylistTarget`) at open time rather than re-reading live
+state - exactly the fix applied here: `PlaylistPickerUiState` gained a `target: NowPlaying?` field,
+set once in `startAddCurrentTrackToPlaylist`, and `confirmAddCurrentTrackToPlaylist` now reads only
+that. The review also caught a smaller gap: if `nowPlaying` had gone null by confirm time, the
+dialog closed with no message at all; it now sets one ("Nothing was playing to add").
+
+Not reproduced live - the race needs playback to change in the gap between opening the picker and
+confirming it, which would mean timing a real track change against a real network round trip
+precisely enough that staging it on the test phone wasn't practical. Checked by code inspection
+(the fix removes the only place `nowPlaying` was re-read after the dialog opened) plus the existing
+test/lint suite, which can't exercise the timing itself. Shipped as 0.1.31.

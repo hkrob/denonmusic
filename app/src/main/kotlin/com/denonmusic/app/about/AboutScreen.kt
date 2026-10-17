@@ -53,6 +53,10 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.31" to listOf(
+        "Fixed: adding the currently playing track to a Plex playlist (new in 0.1.30) could add " +
+            "the wrong track if playback moved on while the picker was still open.",
+    ),
     "0.1.30" to listOf(
         "You can now add whatever's currently playing to a Plex playlist too - a new button next " +
             "to Now Playing's title.",

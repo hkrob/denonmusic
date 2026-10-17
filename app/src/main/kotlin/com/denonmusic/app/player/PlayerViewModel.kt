@@ -108,6 +108,12 @@ data class PlaylistPickerUiState(
     val isOpen: Boolean = false,
     val isLoading: Boolean = false,
     val playlists: List<PlexPlaylist> = emptyList(),
+    /**
+     * The track to add, captured when the dialog opened - not re-read from [PlayerStateTracker] at
+     * confirm time, since playback can advance to a different track while the user is still looking
+     * at the picker (loading playlists over the network, or just deliberating).
+     */
+    val target: NowPlaying? = null,
 )
 
 /**
@@ -351,8 +357,8 @@ class PlayerViewModel @Inject constructor(
      * doesn't show the action at all in that mode, for the same reason.
      */
     fun startAddCurrentTrackToPlaylist() {
-        if (tracker.state.value.nowPlaying == null) return
-        _playlistPicker.value = PlaylistPickerUiState(isOpen = true, isLoading = true)
+        val np = tracker.state.value.nowPlaying ?: return
+        _playlistPicker.value = PlaylistPickerUiState(isOpen = true, isLoading = true, target = np)
         viewModelScope.launch {
             playlistRepository.listPlaylists()
                 .onSuccess { playlists -> _playlistPicker.value = _playlistPicker.value.copy(isLoading = false, playlists = playlists) }
@@ -368,9 +374,12 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun confirmAddCurrentTrackToPlaylist(playlist: PlexPlaylist) {
-        val np = tracker.state.value.nowPlaying
+        val np = _playlistPicker.value.target
         _playlistPicker.value = PlaylistPickerUiState()
-        if (np == null) return
+        if (np == null) {
+            tracker.update { it.copy(message = "Nothing was playing to add") }
+            return
+        }
         viewModelScope.launch {
             val track = PlexLookupTrack(np.song, np.artist, np.album)
             playlistRepository.addTrackToPlaylist(playlist, track)
