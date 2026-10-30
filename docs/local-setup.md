@@ -10,12 +10,18 @@ for the current state, and the last section for what happened most recently.
 
 ## Where the work stands
 
-**Shipping.** v0.1.31 (`versionCode` 32) is published to GitHub Releases and the in-app updater
+**Shipping.** v0.1.32 (`versionCode` 33) is published to GitHub Releases and the in-app updater
 offers it. (The version moves often; `app/build.gradle.kts` is the authority, not this line, and the
 About tab's CHANGELOG is the authority for what each version changed.) All six phases in
 [`plan.md`](plan.md) are done and were verified end-to-end against the real AVR-X4500H. Everything
 since then is listed below, newest first, with what was and was not checked on real hardware.
 
+- **0.1.32** - No functional change. The project was moved to `/workspace/dev/android/denonmusic`,
+  so this release rebuilds from the new location and confirms the toolchain still works there
+  (`:core:*` tests and `assembleDebug` passed; JDK is OpenJDK 21 now, not Temurin). `CLAUDE.md`'s
+  stale paths and JDK note were corrected, and `:core:plex` was added to its module list and test
+  command. The APK is behaviourally identical to 0.1.31. **Not verified on real hardware** - there
+  was nothing to verify.
 - **0.1.31** - Bug fix, found by a `/code-review` pass run right after 0.1.30 shipped, not by a user
   report: `confirmAddCurrentTrackToPlaylist` read the *live* `PlayerStateTracker.nowPlaying` at
   confirm time rather than the track that was playing when the picker opened, so if playback moved

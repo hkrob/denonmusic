@@ -20,18 +20,18 @@ the main path - don't grow it into one.
 
 ## Build
 
-The project lives on Linux (`/workspace/android-denonmusic`); it was moved from Windows, so any
+The project lives on Linux (`/workspace/dev/android/denonmusic`); it was moved from Windows, so any
 `C:/...` path or `.bat`/`.ps1` reference you meet is a leftover. `JAVA_HOME` **must** point at a JDK
 17+ - the Android Gradle plugin fails during startup with an error that doesn't name the cause. Here
-it is already set to Temurin 21 (`/usr/lib/jvm/temurin-21-jdk-amd64`), so just check `java -version`:
+it is already set to OpenJDK 21 (`/usr/lib/jvm/java-21-openjdk-amd64`), so just check `java -version`:
 
 ```sh
-./gradlew :app:testDebugUnitTest :core:heos:test :core:avr:test :core:smb:test :core:data:testDebugUnitTest
+./gradlew :app:testDebugUnitTest :core:heos:test :core:avr:test :core:smb:test :core:plex:test :core:data:testDebugUnitTest
 ./gradlew ktlintCheck :app:lintDebug   # both, or CI fails; ktlintFormat fixes the first
 ./gradlew assembleDebug
 ```
 
-`:core:heos`, `:core:avr` and `:core:smb` are pure JVM and build with no Android SDK at all;
+`:core:heos`, `:core:avr`, `:core:smb` and `:core:plex` are pure JVM and build with no Android SDK at all;
 `settings.gradle.kts` gates `:app` and `:core:data` on an SDK being present. Keep the protocol
 modules Android-free - that gating is load-bearing for CI.
 
@@ -120,7 +120,7 @@ dry run only means something after the version bump is pushed. After publishing,
 and confirm `apksigner verify --print-certs` shows the fingerprint pinned in `release.yml`.
 
 For a local signed build, `keystore.properties` needs an absolute `storeFile`
-(`/workspace/android-denonmusic/release.keystore`); its `keytool` SHA-256 must match
+(`/workspace/dev/android/denonmusic/release.keystore`); its `keytool` SHA-256 must match
 `EXPECTED_SIGNER` in `release.yml`, or no build can install over an existing one.
 
 ## Environment hazards
@@ -136,7 +136,7 @@ git refuses it ("dubious ownership"); there is no `user.name`/`user.email`; and 
 credentials even though `gh` is authenticated. Pass them per command instead of editing global config:
 
 ```sh
-export GIT_CONFIG_COUNT=3 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/workspace/android-denonmusic \
+export GIT_CONFIG_COUNT=3 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/workspace/dev/android/denonmusic \
   GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1= \
   GIT_CONFIG_KEY_2=credential.helper GIT_CONFIG_VALUE_2='!gh auth git-credential'
 export GIT_AUTHOR_NAME=Rob GIT_AUTHOR_EMAIL=robertlempriere@gmail.com   # the existing history's author
