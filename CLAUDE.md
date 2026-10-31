@@ -37,8 +37,9 @@ modules Android-free - that gating is load-bearing for CI.
 
 The SDK is `/opt/android-sdk` (`ANDROID_HOME` is set). `local.properties` `sdk.dir` is absolute and
 gitignored, and Gradle prefers it over `ANDROID_HOME`, so a stale path there breaks the build - it
-once held a `C:/Users/...` path. The SDK has platforms 34 and 36 (`compileSdk` is 36) but no
-`emulator` or `system-images`; install them with `sdkmanager` before reaching for an AVD.
+once held a `C:/Users/...` path. The SDK has platforms 34 and 36 (`compileSdk` is 36), the `emulator`, and an API 34 AVD
+(`shots_avd`, google_apis x86_64) with `/dev/kvm` available, so it boots headless in ~25 s. There is
+no API 36 image; install one with `sdkmanager` for version-specific checks.
 
 ## Protocol facts that have already cost time
 
