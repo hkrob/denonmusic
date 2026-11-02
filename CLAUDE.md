@@ -48,6 +48,7 @@ no API 36 image; install one with `sdkmanager` for version-specific checks.
   Any new prefix match needs the same scepticism.
 - **Volume wire format is positional**, so every value must be zero-padded to two digits before the
   optional half-step digit. `MV55` is -25 dB, not -74.5 dB.
+- **A receiver in standby (`ZMOFF`) ignores `MV` volume commands.** `MV35` sent twice to an off unit changed nothing and it stayed at `MV46` (-34 dB). The volume can't be pre-set while the unit is off, and power-on is the step that can make sound, so ask the user before powering it on when testing at low volume.
 - **`browse/add_to_queue` returns success long before the receiver has finished with it** (~30ms vs
   ~450ms for a 13-track container, which ends with `event/player_queue_changed`). A second add
   inside that window is refused with `eid=9 Out of range` - the spec's "parameter out of range",
@@ -143,6 +144,8 @@ export GIT_CONFIG_COUNT=3 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/wo
 export GIT_AUTHOR_NAME=Rob GIT_AUTHOR_EMAIL=robertlempriere@gmail.com   # the existing history's author
 export GIT_COMMITTER_NAME=Rob GIT_COMMITTER_EMAIL=robertlempriere@gmail.com
 ```
+
+A skill or slash command that injects `!`git status`` (for example `/commit`) can fail with `fatal: detected dubious ownership` before you can act. If that happens, run the git steps yourself from a Bash call with the exports above.
 
 `git status` may also list files as modified when `git diff` is empty: stale stat data the filesystem
 won't let git refresh. Trust `git diff --quiet`, not the status list.
