@@ -1,12 +1,12 @@
 package com.denonmusic.app.lancontrol
 
-import java.io.BufferedReader
+import com.denonmusic.smb.HttpRequestReader
 import java.io.IOException
-import java.io.InputStreamReader
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
+import java.util.concurrent.Semaphore
 import kotlin.concurrent.thread
 
 data class LanControlRequest(
@@ -36,12 +36,21 @@ data class LanControlResponse(val status: Int, val body: String) {
  * Every request must carry [authToken] via the `X-Lan-Control-Token` header or a `?token=` query
  * parameter; anything else (including a request while no token is configured) gets a 401. Comparison
  * is constant-time so response timing can't leak how many leading characters of a guess were correct.
+ *
+ * **Everything up to that token check runs for anyone who can reach the port**, so none of it may
+ * trust its input: a request is read through [HttpRequestReader]'s size limits and under
+ * [readTimeoutMillis], at most [MAX_CLIENTS] are served at once, and [serve] lets no exception
+ * leave its thread. That last one is not tidiness. An exception escaping a plain thread ends the
+ * whole process on Android, and a single `GET /status?x=%zz` used to do exactly that - with no
+ * token, because the query string is decoded before the token is looked at.
  */
 class LanControlServer(
     private val authToken: () -> String?,
     private val handle: (LanControlRequest) -> LanControlResponse,
+    private val readTimeoutMillis: Int = READ_TIMEOUT_MILLIS,
 ) : AutoCloseable {
 
+    private val clientSlots = Semaphore(MAX_CLIENTS)
     private var serverSocket: ServerSocket? = null
     private var acceptThread: Thread? = null
 
@@ -59,7 +68,20 @@ class LanControlServer(
             acceptThread = thread(isDaemon = true, name = "lan-control-accept") {
                 while (!socket.isClosed) {
                     val client = runCatching { socket.accept() }.getOrNull() ?: break
-                    thread(isDaemon = true, name = "lan-control-client") { serve(client) }
+                    // Thread-per-connection with no ceiling is a thread per socket anyone cares to
+                    // open. Turning the surplus away costs a real client nothing: this API's own
+                    // traffic is a handful of short requests at a time.
+                    if (!clientSlots.tryAcquire()) {
+                        runCatching { client.close() }
+                        continue
+                    }
+                    thread(isDaemon = true, name = "lan-control-client") {
+                        try {
+                            serve(client)
+                        } finally {
+                            clientSlots.release()
+                        }
+                    }
                 }
             }
             true
@@ -78,33 +100,43 @@ class LanControlServer(
     private fun serve(socket: Socket) {
         socket.use {
             try {
-                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.US_ASCII))
+                // Bounds how long a client may take to *send* its request - without it a socket
+                // that connects and says nothing holds its thread for good. It does not cut a slow
+                // handler short: that is this side writing, which a read timeout never touches.
+                socket.soTimeout = readTimeoutMillis
+                val reader = HttpRequestReader(socket.getInputStream())
                 val requestLine = reader.readLine() ?: return
-                val parsed = parseRequestLine(requestLine) ?: return respond(socket, LanControlResponse(400, """{"error":"bad request"}"""))
-                readHeaders(reader).let { headers ->
-                    // The page itself carries no secrets and can't know the token before the user
-                    // types it in, so it's served without auth - same as a login screen. Every API
-                    // call it makes is still gated below like any other client.
-                    if (parsed.method == "GET" && parsed.path == "/") {
-                        return respondHtml(socket, WEB_UI_HTML)
-                    }
+                val headers = reader.readHeaders()
+                val parsed = parseRequestLine(requestLine).takeUnless { reader.overflowed }
+                    ?: return respond(socket, LanControlResponse(400, """{"error":"bad request"}"""))
 
-                    val presented = headers["x-lan-control-token"] ?: parsed.query["token"]
-                    val expected = authToken()
-                    if (expected.isNullOrEmpty() || presented == null || !constantTimeEquals(presented, expected)) {
-                        return respond(socket, LanControlResponse(401, """{"error":"unauthorized"}"""))
-                    }
+                // The page itself carries no secrets and can't know the token before the user
+                // types it in, so it's served without auth - same as a login screen. Every API
+                // call it makes is still gated below like any other client.
+                if (parsed.method == "GET" && parsed.path == "/") {
+                    return respondHtml(socket, WEB_UI_HTML)
+                }
+
+                val presented = headers["x-lan-control-token"] ?: parsed.query["token"]
+                val expected = authToken()
+                if (expected.isNullOrEmpty() || presented == null || !constantTimeEquals(presented, expected)) {
+                    return respond(socket, LanControlResponse(401, """{"error":"unauthorized"}"""))
                 }
 
                 val response = runCatching { handle(parsed) }
                     .getOrElse { e -> LanControlResponse(500, """{"error":${jsonString(e.message ?: "internal error")}}""") }
                 respond(socket, response)
             } catch (_: IOException) {
-                // Peer closed early - nothing to do.
+                // Peer closed early, went quiet past the read timeout, or sent more than
+                // HttpRequestReader will hold - nothing to answer.
+            } catch (_: Exception) {
+                // See the class doc: nothing may escape this thread.
+                runCatching { respond(socket, LanControlResponse(500, """{"error":"internal error"}""")) }
             }
         }
     }
 
+    /** Null for anything that isn't a usable request line, which the caller answers with a 400. */
     private fun parseRequestLine(line: String): LanControlRequest? {
         val parts = line.trim().split(' ')
         if (parts.size < 2) return null
@@ -112,30 +144,36 @@ class LanControlServer(
         val rawPath = parts[1]
         val queryIndex = rawPath.indexOf('?')
         val path = if (queryIndex == -1) rawPath else rawPath.substring(0, queryIndex)
-        val query = if (queryIndex == -1) emptyMap() else parseQuery(rawPath.substring(queryIndex + 1))
+        val query = if (queryIndex == -1) emptyMap() else parseQuery(rawPath.substring(queryIndex + 1)) ?: return null
         return LanControlRequest(method, path, query)
     }
 
-    private fun parseQuery(raw: String): Map<String, String> =
-        raw.split('&').filter { it.isNotEmpty() }.mapNotNull { pair ->
+    /**
+     * Null when the query can't be trusted as written: a percent escape `URLDecoder` rejects (it
+     * throws rather than passing the text through), or a control character in a decoded name or
+     * value. The second matters because of where these values go next. Both receiver protocols are
+     * line-based and neither escapes a line ending - `/input?mnemonic=NET%0DMV98` would have reached
+     * the AVR's telnet port as `SINET` followed by a `MV98` nobody asked for, and a `cid` could
+     * carry a second HEOS command the same way. Nothing this API accepts needs one.
+     */
+    private fun parseQuery(raw: String): Map<String, String>? {
+        val result = LinkedHashMap<String, String>()
+        for (pair in raw.split('&')) {
             val eq = pair.indexOf('=')
-            if (eq == -1) return@mapNotNull null
-            val key = URLDecoder.decode(pair.substring(0, eq), "UTF-8")
-            val value = URLDecoder.decode(pair.substring(eq + 1), "UTF-8")
-            key to value
-        }.toMap()
-
-    private fun readHeaders(reader: BufferedReader): Map<String, String> {
-        val headers = LinkedHashMap<String, String>()
-        while (true) {
-            val line = reader.readLine() ?: break
-            if (line.isEmpty()) break
-            val colon = line.indexOf(':')
-            if (colon == -1) continue
-            headers[line.substring(0, colon).trim().lowercase()] = line.substring(colon + 1).trim()
+            if (eq == -1) continue
+            val key = decodeOrNull(pair.substring(0, eq)) ?: return null
+            val value = decodeOrNull(pair.substring(eq + 1)) ?: return null
+            result[key] = value
         }
-        return headers
+        return result
     }
+
+    private fun decodeOrNull(text: String): String? =
+        try {
+            URLDecoder.decode(text, "UTF-8").takeUnless { decoded -> decoded.any(Char::isISOControl) }
+        } catch (_: IllegalArgumentException) {
+            null
+        }
 
     private fun respond(socket: Socket, response: LanControlResponse) =
         writeResponse(socket, response.status, "application/json; charset=utf-8", response.body.toByteArray(Charsets.UTF_8))
@@ -163,6 +201,13 @@ class LanControlServer(
         404 -> "Not Found"
         500 -> "Internal Server Error"
         else -> "Unknown"
+    }
+
+    private companion object {
+        const val READ_TIMEOUT_MILLIS = 10_000
+
+        /** Well clear of the web UI's own polling plus a few scripts; see the accept loop. */
+        const val MAX_CLIENTS = 32
     }
 }
 

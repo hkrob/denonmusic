@@ -10,12 +10,22 @@ for the current state, and the last section for what happened most recently.
 
 ## Where the work stands
 
-**Shipping.** v0.1.32 (`versionCode` 33) is published to GitHub Releases and the in-app updater
+**Shipping.** v0.1.33 (`versionCode` 34) is published to GitHub Releases and the in-app updater
 offers it. (The version moves often; `app/build.gradle.kts` is the authority, not this line, and the
 About tab's CHANGELOG is the authority for what each version changed.) All six phases in
 [`plan.md`](plan.md) are done and were verified end-to-end against the real AVR-X4500H. Everything
 since then is listed below, newest first, with what was and was not checked on real hardware.
 
+- **0.1.33** - Security/robustness fix to the two small HTTP servers, found by a review pass rather
+  than a user report. With LAN control on, `GET /status?x=%zz` crashed the app with no token:
+  `URLDecoder` throws on a bad escape, the query was decoded before the token check, and an
+  exception leaving a plain thread ends the process on Android. Also closed: a CR in a query value
+  reaching the AVR telnet or HEOS line protocols as a second command (needed the token), no read
+  timeout, unbounded request lines, unbounded client threads. `SmbBridgeServer` shares the new
+  `HttpRequestReader` limits and no longer lets an unchecked exception escape. Verified on the
+  API 34 emulator: the released 0.1.32 dies with `FATAL EXCEPTION: lan-control-client`, this build
+  answers 400 and stays up. **Not verified against the receiver** - nothing here changes what is
+  sent to it for a well-formed request. Detail in the dated entry at the end of this file.
 - **0.1.32** - No functional change. The project was moved to `/workspace/dev/android/denonmusic`,
   so this release rebuilds from the new location and confirms the toolchain still works there
   (`:core:*` tests and `assembleDebug` passed; JDK is OpenJDK 21 now, not Temurin). `CLAUDE.md`'s
@@ -93,8 +103,9 @@ notification (including after the app's task is swiped away).
 - Every module in `settings.gradle.kts` is live: `:core:heos`, `:core:avr`, `:core:smb` and
   `:core:plex` are pure JVM, plus `:app` and `:core:data` when an Android SDK is present. Only
   `:feature:probe` is still commented out, and nothing wants it - `tools/probe.py` covers that ground.
-- **282 unit tests, 0 failures, 0 skipped** across `:app`, `:core:heos`, `:core:avr`, `:core:smb`,
-  `:core:plex` and `:core:data` (counted from the JUnit XML, 2026-10-11). `ktlintCheck` and
+- **238 unit tests, 0 failures, 0 skipped** across `:app`, `:core:heos`, `:core:avr`, `:core:smb`,
+  `:core:plex` and `:core:data` (`<testcase>` entries in the JUnit XML after a clean build,
+  2026-11-10; the 282 recorded here on 2026-10-11 was not reproducible, and no test was removed). `ktlintCheck` and
   `:app:lintDebug` clean, `:app:assembleDebug` builds.
 - Open, in order of usefulness: remove/reorder/rename/delete on a Plex playlist are still not
   implemented. The add-to-playlist entry is in Search and Now Playing; Browse's and Playlists' own
@@ -1252,3 +1263,38 @@ confirming it, which would mean timing a real track change against a real networ
 precisely enough that staging it on the test phone wasn't practical. Checked by code inspection
 (the fix removes the only place `nowPlaying` was re-read after the dialog opened) plus the existing
 test/lint suite, which can't exercise the timing itself. Shipped as 0.1.31.
+
+## Unauthenticated crash in the LAN control server, found by review (2026-11-10)
+
+A read-through of the code that listens on the network, not prompted by a report. `LanControlServer`
+parsed the request line - including `URLDecoder.decode` on every query name and value - before it
+checked the token, inside a `try` that caught only `IOException`. `URLDecoder` throws
+`IllegalArgumentException` on a malformed escape, so `GET /status?x=%zz` from anything on the LAN
+left the `lan-control-client` thread with an uncaught exception, which on Android kills the process
+(and the playback notification with it). Reproduced on the API 34 emulator against the published
+0.1.32 APK: one `curl`, `FATAL EXCEPTION: lan-control-client`, pid gone.
+
+Fixed in 0.1.33, along with what the same read turned up next to it:
+
+- `serve` now catches everything; a bad request line or query is a 400.
+- A decoded query name or value containing a control character is a 400. Both receiver protocols
+  are line-based and neither escapes a line ending, so `/input?mnemonic=NET%0DMV98` would have
+  reached telnet:23 as `SINET` then `MV98`, and a `cid` could carry a second HEOS command. This one
+  needed the token, so it was a way for a client to exceed the API, not a way in.
+- Request reading goes through `HttpRequestReader` (`:core:smb`, shared with `SmbBridgeServer`):
+  8 KB per line, 256 KB per request, 10 s read timeout. LAN control also caps concurrent clients
+  at 32. Before, a silent socket held a thread forever and a line with no end was buffered whole.
+- `SmbBridgeServer.serve` catches non-`IOException` failures too (the SMB library has unchecked
+  ones), and `BridgeQueueController.playCurrent` no longer lets a failed bridge bind escape its
+  launch.
+
+Checked on the emulator with the fixed debug build: no token 401, `%zz` 400, CR injection 400, a
+20 KB request line 400, web UI 200, `/status` with the token 200, a silent client closed at 10.0 s,
+same pid throughout. The four new `LanControlServerTest` cases fail against the old server source.
+The bridge-server changes are covered by unit tests only - not exercised on the emulator or with
+the receiver fetching through it.
+
+Also in this release: `ci.yml`'s JVM job now runs `:core:plex:test`, which it had been skipping. And
+a build gotcha from the project move: Gradle's incremental dexing state still named the old
+`/workspace/android-denonmusic` path and failed `:app:mergeLibDexDebug` with "is located outside
+the root directory"; `./gradlew clean` cleared it.

@@ -101,6 +101,36 @@ class SmbBridgeServerTest {
     }
 
     @Test
+    fun `a resource that fails with an unchecked exception does not escape the client thread`() {
+        // On Android an exception leaving a plain thread ends the process, so "the fetch failed"
+        // must never be allowed to become "the app crashed".
+        val uncaught = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { _, e -> uncaught.set(e) }
+        try {
+            val resource = BridgeResource(length = 4, contentType = "audio/flac", openAt = { error("share went away") })
+            val s = SmbBridgeServer { resource }
+            s.start()
+            server = s
+
+            request(s.port, "/track")
+
+            assertEquals(null, uncaught.get())
+        } finally {
+            Thread.setDefaultUncaughtExceptionHandler(previous)
+        }
+    }
+
+    @Test
+    fun `an oversized request line is refused with a 400`() {
+        val s = startServer("x".toByteArray())
+
+        val response = request(s.port, "/" + "a".repeat(64 * 1024))
+
+        assertEquals(400, response.status)
+    }
+
+    @Test
     fun `an unknown token returns 404`() {
         val s = startServer("data".toByteArray())
 

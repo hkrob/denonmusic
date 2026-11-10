@@ -154,6 +154,61 @@ class LanControlServerTest {
     }
 
     @Test
+    fun `a malformed percent escape is a 400, not an uncaught exception on the client thread`() {
+        // URLDecoder throws IllegalArgumentException on "%zz". Uncaught on a plain thread that is
+        // only a stack trace under a JVM test, but on Android it takes the whole process down - and
+        // the query string is parsed before the token is checked, so no token was needed to do it.
+        val uncaught = java.util.concurrent.atomic.AtomicReference<Throwable?>()
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { _, e -> uncaught.set(e) }
+        try {
+            val s = startServer()
+
+            val response = request(s.port, "GET", "/status?x=%zz", tokenHeader = null)
+
+            assertEquals(400, response.status)
+            assertEquals(null, uncaught.get())
+        } finally {
+            Thread.setDefaultUncaughtExceptionHandler(previous)
+        }
+    }
+
+    @Test
+    fun `a control character in a query value is rejected before the handler runs`() {
+        // Both receiver protocols are line-based: a CR smuggled into `mnemonic` or `cid` would end
+        // the intended command and start a second one of the caller's choosing.
+        var handlerCalled = false
+        val s = startServer(handle = { handlerCalled = true; LanControlResponse.ok("{}") })
+
+        val response = request(s.port, "POST", "/input?mnemonic=NET%0DMV98")
+
+        assertEquals(400, response.status)
+        assertTrue(!handlerCalled)
+    }
+
+    @Test
+    fun `a client that connects and says nothing is dropped instead of holding a thread forever`() {
+        val s = LanControlServer(authToken = { "secret" }, handle = { LanControlResponse.ok("{}") }, readTimeoutMillis = 200)
+        assertTrue(s.start(freePort()))
+        server = s
+
+        Socket("127.0.0.1", s.port).use { socket ->
+            socket.soTimeout = 5_000
+            // No request sent. The server closing its end shows up here as end-of-stream.
+            assertEquals(-1, socket.getInputStream().read())
+        }
+    }
+
+    @Test
+    fun `an oversized request line is refused rather than buffered without limit`() {
+        val s = startServer()
+
+        val response = request(s.port, "GET", "/status?pad=" + "a".repeat(64 * 1024))
+
+        assertEquals(400, response.status)
+    }
+
+    @Test
     fun `GET slash serves the web UI without a token and never reaches the handler`() {
         var handlerCalled = false
         val s = startServer(handle = { handlerCalled = true; LanControlResponse.ok("{}") })

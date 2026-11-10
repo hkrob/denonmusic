@@ -1,10 +1,8 @@
 package com.denonmusic.smb
 
 import java.io.BufferedOutputStream
-import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStream
-import java.io.InputStreamReader
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -52,10 +50,14 @@ class SmbBridgeServer(private val resolve: (token: String) -> BridgeResource?) :
     private fun serve(socket: Socket) {
         socket.use {
             try {
-                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.US_ASCII))
+                // Only bounds how long the request itself may take to arrive; streaming the file
+                // back is this side writing, which a read timeout never touches.
+                socket.soTimeout = READ_TIMEOUT_MILLIS
+                val reader = HttpRequestReader(socket.getInputStream())
                 val requestLine = reader.readLine() ?: return
-                val (method, path) = parseRequestLine(requestLine) ?: return respond(socket, 400, "Bad Request")
-                val headers = readHeaders(reader)
+                val headers = reader.readHeaders()
+                val (method, path) = parseRequestLine(requestLine).takeUnless { reader.overflowed }
+                    ?: return respond(socket, 400, "Bad Request")
                 if (method != "GET") return respond(socket, 405, "Method Not Allowed")
 
                 val token = path.removePrefix("/")
@@ -73,6 +75,10 @@ class SmbBridgeServer(private val resolve: (token: String) -> BridgeResource?) :
                 }
             } catch (_: IOException) {
                 // Peer closed early (a receiver aborting a range fetch mid-stream) - nothing to do.
+            } catch (_: Exception) {
+                // Not every failure under [BridgeResource.openAt] is an IOException - the SMB
+                // library has unchecked ones of its own - and an exception leaving this thread
+                // would end the whole process on Android, not just this one fetch.
             }
         }
     }
@@ -81,18 +87,6 @@ class SmbBridgeServer(private val resolve: (token: String) -> BridgeResource?) :
         val parts = line.trim().split(' ')
         if (parts.size < 2) return null
         return parts[0].uppercase() to parts[1]
-    }
-
-    private fun readHeaders(reader: BufferedReader): Map<String, String> {
-        val headers = LinkedHashMap<String, String>()
-        while (true) {
-            val line = reader.readLine() ?: break
-            if (line.isEmpty()) break
-            val colon = line.indexOf(':')
-            if (colon == -1) continue
-            headers[line.substring(0, colon).trim().lowercase()] = line.substring(colon + 1).trim()
-        }
-        return headers
     }
 
     /** Parses a single-range `Range: bytes=start-end` header; only the one form this app ever sends. */
@@ -141,5 +135,9 @@ class SmbBridgeServer(private val resolve: (token: String) -> BridgeResource?) :
             output.write(buffer, 0, n)
             remaining -= n
         }
+    }
+
+    private companion object {
+        const val READ_TIMEOUT_MILLIS = 10_000
     }
 }

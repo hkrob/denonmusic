@@ -53,6 +53,12 @@ import java.util.Locale
  * a release with no matching entry - see `.github/workflows/README-release.md`.
  */
 private val CHANGELOG = listOf(
+    "0.1.33" to listOf(
+        "Fixed: with LAN control switched on, another device on your network could crash the app " +
+            "with a single malformed request - no password needed.",
+        "LAN control now refuses requests that try to smuggle extra commands through to the " +
+            "receiver, and drops clients that connect and then go quiet.",
+    ),
     "0.1.32" to listOf(
         "No changes to the app - rebuilt after the project moved to a new build machine. Nothing " +
             "here needs your attention.",

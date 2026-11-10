@@ -146,7 +146,9 @@ class BridgeQueueController @Inject constructor(
         val item = _state.value.currentItem ?: return
         playJob = scope.launch {
             val playerId = heosSession.resolvePid() ?: return@launch
-            val url = smbBridgeService.urlFor(item.path) ?: return@launch
+            // urlFor starts the bridge server on first use, and a failed bind there is an
+            // IOException with nothing above this launch to catch it.
+            val url = runCatching { smbBridgeService.urlFor(item.path) }.getOrNull() ?: return@launch
             currentTrackStartedAtMs = System.currentTimeMillis()
             runCatching { heosSession.heosClient?.playStream(playerId, url) }
 
