@@ -1,0 +1,15 @@
+# The image is built from the repository root so the server can see the protocol modules it is
+# built on. Nothing below belongs in a build context - least of all the signing material.
+.git
+.gradle
+.kotlin
+.idea
+.claude
+**/build
+local.properties
+keystore.properties
+*.keystore
+*.jks
+*.apk
+*.aab
+tools/sweeps

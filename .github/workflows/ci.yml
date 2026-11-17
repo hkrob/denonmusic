@@ -28,11 +28,11 @@ jobs:
       # without an SDK. Keeping this a separate job means a protocol regression is reported as
       # such rather than buried in an Android build log.
       #
-      # All four SDK-free modules run here. :app and :core:data are deliberately absent - they are
+      # All five SDK-free modules run here, :server among them. :app and :core:data are deliberately absent - they are
       # Android-gated in settings.gradle.kts and aren't even configured without an SDK, so they run
       # in the `android` job below instead.
       - name: Run JVM tests
-        run: ./gradlew :core:heos:test :core:avr:test :core:smb:test :core:plex:test --stacktrace
+        run: ./gradlew :core:heos:test :core:avr:test :core:smb:test :core:plex:test :server:test --stacktrace
 
       - name: Upload test report
         if: always()

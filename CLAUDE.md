@@ -26,12 +26,12 @@ The project lives on Linux (`/workspace/dev/android/denonmusic`); it was moved f
 it is already set to OpenJDK 21 (`/usr/lib/jvm/java-21-openjdk-amd64`), so just check `java -version`:
 
 ```sh
-./gradlew :app:testDebugUnitTest :core:heos:test :core:avr:test :core:smb:test :core:plex:test :core:data:testDebugUnitTest
+./gradlew :app:testDebugUnitTest :core:heos:test :core:avr:test :core:smb:test :core:plex:test :core:data:testDebugUnitTest :server:test
 ./gradlew ktlintCheck :app:lintDebug   # both, or CI fails; ktlintFormat fixes the first
 ./gradlew assembleDebug
 ```
 
-`:core:heos`, `:core:avr`, `:core:smb` and `:core:plex` are pure JVM and build with no Android SDK at all;
+`:core:heos`, `:core:avr`, `:core:smb`, `:core:plex` and `:server` are pure JVM and build with no Android SDK at all;
 `settings.gradle.kts` gates `:app` and `:core:data` on an SDK being present. Keep the protocol
 modules Android-free - that gating is load-bearing for CI.
 
@@ -66,6 +66,17 @@ no API 36 image; install one with `sdkmanager` for version-specific checks.
   for both. Assume a comment about receiver behaviour is a hypothesis until a tap says otherwise.
 - **Home Assistant's `denonavr` integration competes for the control ports.** If telnet:23 or
   HEOS:1255 reset instantly from here, that's usually why.
+
+## The server
+
+`:server` is a headless HTTP control server (Ktor) for Home Assistant and voice control, run as a
+Docker container - see [`server/README.md`](server/README.md). It reuses `HeosSession`, `AvrSession`
+and `addAllToQueue` from the core modules, which is why those live there and not in `:app`: a change
+to any of them changes the released app and the server together. Its tests run against the fake
+receivers in the core modules' `testFixtures`. The invariant applies to it unchanged - no bridge.
+
+There is no `docker` binary in this environment, so the image cannot be built or run here; what can
+be checked is that `:server:installDist` works from a copy of the build context with no SDK set.
 
 ## Android facts specific to this app
 

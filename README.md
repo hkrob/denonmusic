@@ -32,11 +32,13 @@ to play an album.
 
 ```
 app/            Compose UI, ViewModels, Hilt wiring, the SMB bridge queue, the LAN control API.
-core/heos/      HEOS CLI protocol: codec, socket, event stream, typed client, library crawler
-                (LibraryIndexer, behind Search).  Pure JVM.
+core/heos/      HEOS CLI protocol: codec, socket, event stream, typed client, the reconnecting
+                session, library crawler (LibraryIndexer, behind Search).  Pure JVM.
 core/avr/       Raw Denon telnet control (port 23): power, input, sound mode, signal info.  Pure JVM.
 core/smb/       SMB access and audio header parsing (FLAC/DSF/DFF/MP3/M4A-MP4).  Pure JVM.
 core/data/      Room caches (browse listings, breadcrumb, media info, the search index) and DataStore settings.
+server/         Headless HTTP control server for Home Assistant and voice control, as a Docker
+                container - see server/README.md.  Pure JVM.
 tools/probe.py  Protocol probe for answering open questions against a real receiver.
 ```
 

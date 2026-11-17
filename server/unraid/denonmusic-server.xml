@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>denonmusic-server</Name>
+  <Repository>denonmusic-server:local</Repository>
+  <Registry/>
+  <Network>bridge</Network>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Overview>Headless control server for a Denon/HEOS receiver. Owns the receiver's control connections and offers an HTTP API for search, queueing, transport and volume, for Home Assistant and a voice assistant. It queues and controls; the receiver reads the music itself. The image is built locally - see server/README.md in the denonmusic repository.</Overview>
+  <Category>HomeAutomation: MediaApp:Music</Category>
+  <WebUI/>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+  <Config Name="HTTP port" Target="8901" Default="8901" Mode="tcp" Description="The control API. Home Assistant talks to this." Type="Port" Display="always" Required="true" Mask="false">8901</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/denonmusic-server" Mode="rw" Description="Where the library search index is kept between restarts." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/denonmusic-server</Config>
+  <Config Name="Receiver address" Target="DENON_HOST" Default="" Mode="" Description="IP address or hostname of the receiver." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="API token" Target="DENON_API_TOKEN" Default="" Mode="" Description="Every request must send this in an X-Lan-Control-Token header. The server will not start without it." Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Maximum volume" Target="DENON_MAX_VOLUME" Default="60" Mode="" Description="Ceiling (HEOS scale, 0-100) on what the API will set the volume to." Type="Variable" Display="advanced" Required="false" Mask="false">60</Config>
+  <Config Name="Volume step" Target="DENON_VOLUME_STEP" Default="5" Mode="" Description="How far 'volume up' and 'volume down' move." Type="Variable" Display="advanced" Required="false" Mask="false">5</Config>
+</Container>

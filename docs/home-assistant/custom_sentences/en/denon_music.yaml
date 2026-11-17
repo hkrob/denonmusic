@@ -1,0 +1,55 @@
+# Copy to /config/custom_sentences/en/denon_music.yaml. Custom sentences are matched before Home
+# Assistant's built-in ones, so "play ..." lands here rather than on a media_player in the room.
+language: "en"
+intents:
+  DenonMusicRequest:
+    data:
+      # The verb is passed on with the rest, so the language model sees the whole request and can
+      # tell "play X" from "play X next" itself.
+      - sentences:
+          - "(play|put on|stick on) {request}"
+        slots:
+          verb: "play"
+      - sentences:
+          - "(queue|queue up|add) {request}"
+        slots:
+          verb: "queue"
+
+  DenonControl:
+    data:
+      - sentences:
+          - "{command} [on] the (stereo|hifi|receiver)"
+          - "(stereo|hifi|receiver) {command}"
+      - sentences:
+          - "set [the] (stereo|hifi|receiver) volume to {level}"
+          - "(stereo|hifi|receiver) volume {level}"
+        slots:
+          command: "set_volume"
+
+lists:
+  request:
+    wildcard: true
+  level:
+    range:
+      from: 0
+      to: 100
+  command:
+    values:
+      - in: "pause"
+        out: "pause"
+      - in: "(resume|continue|unpause)"
+        out: "resume"
+      - in: "stop"
+        out: "stop"
+      - in: "(next|skip|next track|skip this)"
+        out: "next"
+      - in: "(previous|previous track|go back)"
+        out: "previous"
+      - in: "(volume up|louder|turn it up)"
+        out: "volume_up"
+      - in: "(volume down|quieter|turn it down)"
+        out: "volume_down"
+      - in: "mute"
+        out: "mute"
+      - in: "unmute"
+        out: "unmute"

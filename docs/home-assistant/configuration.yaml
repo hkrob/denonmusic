@@ -1,0 +1,130 @@
+# Paste into Home Assistant's configuration.yaml (merge with any rest_command / script /
+# intent_script / sensor blocks you already have). Replace the three UPPER_CASE placeholders, and add
+#   denon_api_token: "<the DENON_API_TOKEN you gave the container>"
+# to secrets.yaml. Then copy custom_sentences/en/denon_music.yaml into /config and restart.
+
+rest_command:
+  # One spoken command, already reduced to {action, query}. Slow on purpose: queueing an artist
+  # walks every album folder first.
+  denon_intent:
+    url: "http://UNRAID_HOST:8901/intent"
+    method: post
+    timeout: 60
+    content_type: "application/json"
+    headers:
+      X-Lan-Control-Token: !secret denon_api_token
+    payload: >-
+      {{ {"action": action, "query": query | default(""), "artist": artist | default(""),
+          "type": type | default("any")} | tojson }}
+
+  # Asks Ollama directly rather than through a conversation agent, for two things an agent does not
+  # offer: "format": "json", which makes the model's reply parseable every time, and temperature 0.
+  # The system prompt is docs/home-assistant/ollama-prompt.txt, kept here so this is one paste.
+  denon_parse_utterance:
+    url: "http://OLLAMA_HOST:11434/api/generate"
+    method: post
+    timeout: 60
+    content_type: "application/json"
+    payload: |-
+      {% set system %}You turn one spoken request about playing music into a JSON command for a hi-fi receiver. The text comes from speech recognition, so expect missing capitals, missing punctuation and the odd misheard word.
+
+      Reply with one JSON object and nothing else, with exactly these keys:
+      - "action": "play" to start playing it now, replacing what is playing; "queue" to add it after everything already queued; "play_next" to play it straight after the current track.
+      - "query": the title of the album, song or artist being asked for, as the person said it. Leave out the artist's name when a title is also given, and leave out filler such as "the album", "the song", "some", "by", "please", "on the stereo".
+      - "artist": the artist's name if one was given in addition to a title, otherwise "".
+      - "type": "track" if they said song or track, "album" if they said album or record, "artist" if they asked for an artist with no title, otherwise "any".
+
+      If only an artist is named, put the artist in "query", set "artist" to "" and "type" to "artist".
+      Never invent a title or an artist that was not said. Never answer the request or add commentary.
+
+      Examples:
+      play dark side of the moon -> {"action":"play","query":"dark side of the moon","artist":"","type":"any"}
+      put on the album rumours by fleetwood mac -> {"action":"play","query":"rumours","artist":"fleetwood mac","type":"album"}
+      queue the song hurt by johnny cash -> {"action":"queue","query":"hurt","artist":"johnny cash","type":"track"}
+      play some pj harvey -> {"action":"play","query":"pj harvey","artist":"","type":"artist"}
+      add heroes by david bowie to the queue -> {"action":"queue","query":"heroes","artist":"david bowie","type":"any"}
+      play comfortably numb next -> {"action":"play_next","query":"comfortably numb","artist":"","type":"any"}{% endset %}
+      {{ {"model": "OLLAMA_MODEL", "system": system, "prompt": utterance, "stream": false,
+          "format": "json", "options": {"temperature": 0}} | tojson }}
+
+  denon_index_rebuild:
+    url: "http://UNRAID_HOST:8901/index/rebuild"
+    method: post
+    headers:
+      X-Lan-Control-Token: !secret denon_api_token
+
+script:
+  # Utterance -> Ollama -> {action, query} -> the server. Returns {"speech": "..."} for Assist to say.
+  denon_voice_request:
+    alias: "Denon: voice music request"
+    mode: queued
+    fields:
+      utterance:
+        description: "What was said, verb included"
+        example: "play the wall by pink floyd"
+    sequence:
+      - action: rest_command.denon_parse_utterance
+        data:
+          utterance: "{{ utterance }}"
+        response_variable: parsed
+      - if: "{{ parsed.status != 200 }}"
+        then:
+          - variables:
+              reply: { speech: "I couldn't reach the language model." }
+          - stop: "Ollama failed"
+            response_variable: reply
+      - variables:
+          command: "{{ parsed.content.response | from_json }}"
+      - action: rest_command.denon_intent
+        data:
+          action: "{{ command.action | default('play') }}"
+          query: "{{ command.query | default('') }}"
+          artist: "{{ command.artist | default('') }}"
+          type: "{{ command.type | default('any') }}"
+        response_variable: result
+      - variables:
+          reply:
+            speech: >-
+              {{ result.content.speech if result.status == 200
+                 else result.content.error | default("The stereo didn't answer.") }}
+      - stop: "done"
+        response_variable: reply
+
+intent_script:
+  DenonMusicRequest:
+    action:
+      - action: script.denon_voice_request
+        data:
+          utterance: "{{ verb }} {{ request }}"
+        response_variable: reply
+      - stop: ""
+        response_variable: reply
+    speech:
+      text: "{{ action_response.speech }}"
+
+  # Transport and volume skip the language model: there is nothing to interpret.
+  DenonControl:
+    action:
+      - action: rest_command.denon_intent
+        data:
+          action: "{{ command }}"
+          query: "{{ level | default('') }}"
+        response_variable: result
+      - stop: ""
+        response_variable: result
+    speech:
+      text: >-
+        {{ action_response.content.speech if action_response.status == 200
+           else action_response.content.error | default("The stereo didn't answer.") }}
+
+# Optional: now playing as a sensor. With HA's own denonavr integration disabled, this is where
+# dashboards read the receiver's state from.
+rest:
+  - resource: "http://UNRAID_HOST:8901/status"
+    scan_interval: 30
+    headers:
+      X-Lan-Control-Token: !secret denon_api_token
+    sensor:
+      - name: "Denon now playing"
+        value_template: "{{ value_json.playState }}"
+        json_attributes: [song, artist, album, volume, muted, avrPower, input, soundMode]
