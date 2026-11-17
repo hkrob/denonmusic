@@ -19,6 +19,8 @@ Everything is configured by environment variable. Nothing about your network is 
 | `DENON_DATA_DIR` | | `/data` | Where the search index is saved |
 | `DENON_MAX_VOLUME` | | `60` | Ceiling on the HEOS volume (0-100) this API will set |
 | `DENON_VOLUME_STEP` | | `5` | Size of `volume_up` / `volume_down` |
+| `DENON_REINDEX_AT` | | off | Time of day, `HH:MM`, to rebuild the search index. In the container's time zone (`TZ`) |
+| `DENON_REINDEX_DAYS` | | every day | Days for that rebuild: `sun`, or `mon,thu` |
 
 Locally, with a JDK 17+ and no Android SDK needed:
 
@@ -36,13 +38,19 @@ docker build -f server/Dockerfile -t denonmusic-server:local .
 cp server/unraid/denonmusic-server.xml /boot/config/plugins/dockerMan/templates-user/my-denonmusic-server.xml
 ```
 
-Docker tab -> Add Container -> pick the template, fill in the receiver address and a token.
+Docker tab -> Add Container -> pick the template, fill in the receiver address and a token. To
+update: rebuild the image, then edit the container in the Docker tab and Apply, which recreates it.
 
 ## The index
 
 Search needs an index of the library, built by crawling the receiver's browse tree - the same crawl
-as the app's Search tab (`LibraryIndexer`). It is **not built automatically**: a crawl is tens of
-minutes of browse traffic at the receiver, so when it runs is yours to choose.
+as the app's Search tab (`LibraryIndexer`). A crawl is about half an hour of browse traffic at the
+receiver (27,425 entries took 32 minutes), and control commands keep working throughout. It works
+with the receiver in standby. It never runs on its own at start-up; there are two ways to run it:
+
+- **On a schedule:** set `DENON_REINDEX_AT` (and `DENON_REINDEX_DAYS` for less than daily), for
+  example `03:30` and `sun`. `GET /index` reports the next one as `nextScheduledAt`.
+- **On demand:** `POST /index/rebuild`, from a shell, a Home Assistant automation or anything else.
 
 ```sh
 curl -X POST -H "X-Lan-Control-Token: $TOKEN" http://<server>:8901/index/rebuild
@@ -56,7 +64,9 @@ as good as the receiver's current view of the library.
 Four kinds of thing can be found. Folders and tracks are what the crawl saw. Albums and artists are
 derived from the tracks' own artist/album tags, because folders alone could not answer "play The
 Wall" on a real library (three sibling disc folders, none of that name). An album or artist plays
-the folders its tracks are in, in order; the same album filed in two places plays once. One request
+the folders its tracks are in, in order; the same album filed in two places plays once. The first
+folder is queued and the reply sent at once; the rest are appended behind it while it plays, about a
+second and a half a folder, and the next request that changes the queue stops them. One request
 queues at most 25 folders, so "play Prince" plays the first 25 of however many there are and says so.
 
 With no `type`, a name shared by several kinds goes artist, then album, then folder, then track.
@@ -92,8 +102,13 @@ Every route but `/health` needs the token.
 Errors are `{"error": "..."}` with a status that says whose fault it was: 400 the request, 401 the
 token, 404 nothing matched, 502 the receiver refused, 503 the receiver or the index is not there.
 
-The server does **not** power the receiver on before playing. Whether a `play` wakes a unit in
-standby by itself has not been measured; `/power?on=true` is there if it does not.
+Measured on an AVR-X4500H: a `play` to a receiver in standby wakes it, switches it to the network
+input and starts the music, at whatever volume the amp was last left at - a volume set while it is
+in standby is discarded. For about ten seconds while it wakes, `/status` reports stale now-playing
+and no play state. The HEOS volume this API uses is the same number as the amp's own `MV` scale.
+
+`/queue/add` of a folder walks it and queues every part before it returns, which is slow for a big
+one (24 seconds for a 16-part artist folder). `/intent` is the fast path.
 
 ## Home Assistant
 

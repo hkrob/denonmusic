@@ -17,13 +17,15 @@ About tab's CHANGELOG is the authority for what each version changed.) All six p
 since then is listed below, newest first, with what was and was not checked on real hardware.
 
 - **Unreleased, branch `claude/server`** - A headless control server (`:server`, see
-  [`server/README.md`](../server/README.md)) for Home Assistant and voice control, and the move of
-  `HeosSession`, `AvrSession` and the multi-part queue sequence from `:app` into the core modules so
-  both share them. **The app has not been run on a phone since that move** - it builds and its
-  tests pass, nothing more. Against the receiver the server has run read-only only: `/status`,
-  `/queue` and a full index crawl. **No play, queue, volume or power command from the server has
-  met real hardware**, the Docker image has never been built, and the Home Assistant config and
-  Ollama prompt have never run. Detail in the dated entry at the end of this file.
+  [`server/README.md`](../server/README.md)) for Home Assistant and voice control, installed and
+  running as a container on the Unraid host, and the move of `HeosSession`, `AvrSession` and the
+  multi-part queue sequence from `:app` into the core modules so both share them. Every server
+  route has been run against the real receiver. That found a receiver fault the app shares - a
+  command arriving mid-ingest leaves `get_queue` taking 20 seconds - and `addAllToQueue` now paces
+  multi-part adds to avoid it, which changes the app's "play all" timing too. **The app has not been
+  run on a phone since either change** - it builds and its tests pass, nothing more. The Home
+  Assistant config and Ollama prompt have still never run. Detail in the two dated entries at the
+  end of this file.
 - **0.1.33** - Security/robustness fix to the two small HTTP servers, found by a review pass rather
   than a user report. With LAN control on, `GET /status?x=%zz` crashed the app with no token:
   `URLDecoder` throws on a bad escape, the query was decoded before the token check, and an
@@ -1348,10 +1350,73 @@ folders its tracks are in, and drops a folder whose track titles repeat one alre
 album filed under two paths). One artist came to 610 folders, which is why a request queues at most
 25 and says so.
 
-**Not done, not verified.** Nothing that changes the receiver's state was sent. Whether a HEOS
-`play` wakes a unit in standby is unmeasured, and the server does not power it on. The claim that a
-plain `add_to_queue` of a multi-disc container queues nothing is still the app's comment, not a
-measurement; the server walks every container regardless. The image was not built (no docker on
-this host) - only its build stage's Gradle command, from a copy of the context with no SDK. The
-Home Assistant YAML parses and its templates render; it has not run in Home Assistant, and the
-Ollama prompt has not met a model.
+**Not done at that point** - see the next entry, later the same day, for the state-changing tests
+and the install. Still open after it: the Home Assistant YAML parses and its templates render but
+it has not run in Home Assistant, and the Ollama prompt has not met a model.
+
+## The server on real hardware: a 20-second `get_queue`, and the container installed (2026-11-17)
+
+Same day, with the receiver available for commands that change it. Everything below was sent by the
+server, first run from the development container and then as the installed container.
+
+**What worked first time.** `play` of one track to a receiver in standby: it woke (`PWON`, `ZMON`),
+switched from `TV` to `NET`, went to Direct, and played. A volume set over HEOS while in standby
+read back as set but was discarded on wake - the amp came up at its own `MV40`. For about ten
+seconds during the wake `/status` showed a stale track and no play state. The HEOS volume level and
+the amp's `MV` value were the same number at every level tried (15 to 40). Pause, resume, mute,
+previous, the four queue actions, jumping to a queue item and clearing the queue all did what they
+say. `next` on a one-track queue is refused with `eid=17 Reached skip limit`.
+
+**What did not.** After "play The Wall" - three folders, so clear / `aid=3` x3 / play - the music
+played but `/queue` failed, and kept failing. Taken down to raw commands on the wire:
+
+- `get_queue` answered with an interim "command under process" and then the real result **20.0
+  seconds later, every time**, for minutes, whatever range was asked for. `HeosConnection` gives a
+  command 15 seconds, so to the app or the server the queue is unreadable. `get_now_playing_media`,
+  `get_play_state` and `browse` stayed instant throughout.
+- It is set off by a command the receiver *accepts* while it is still ingesting an add. `play` sent
+  10ms after the last add: wedged. 0.4s after: one slow `get_queue` (1.2s), then normal. 1s after,
+  or no play: normal.
+- Single-track adds are the second trigger, with no play involved. The receiver refuses a
+  *container* add that arrives too soon (`eid=9`, which `HeosClient.addToQueue` retries), but never
+  refuses a track add: twelve back to back, and four, each left `get_queue` at 20 seconds. The same
+  twelve half a second apart did not. Four containers back to back, paced by its own refusals, did
+  not.
+- A later add clears the condition; clearing the queue and adding one folder is a reliable reset.
+
+So the app has this too, wherever "play all" resolves to more than one part - most plainly a folder
+that holds tracks plus a subfolder, which `QueueTargetResolver` queues track by track. It would show
+as a Queue tab that will not load after a play-all. Not confirmed on the app itself.
+
+**The fix** is in `addAllToQueue`, which both share: after each add of a multi-part run it polls
+`get_queue` for the count until that has grown and read the same twice, and only then sends the next
+command. `get_queue` is the barrier because it was seen to act as one - asked mid-ingest it holds
+its answer until the ingest is done (1.1-1.3s for a 13-track folder). A single add is not paced.
+Re-run on the receiver: The Wall, a five-folder artist and a 16-part walked folder all left the
+queue readable in about 20ms.
+
+**What pacing cost, and the server's answer.** A second or so per add made a five-folder artist
+take 23 seconds before anything played, and 25 folders two minutes. So for an album or artist the
+server now queues the first folder alone (for a replace, `aid=4` on its own, the form the receiver
+handles correctly), replies, and appends the rest in the background; the next request that rewrites
+the queue cancels what is left. Measured: reply in 20-200ms, music at once, a 25-folder append
+interrupted by "play Dark Side of the Moon" left exactly that album's nine tracks. These entries
+also skip `QueueTargetResolver` and add each folder as a container - the walk had turned one folder
+with a `covers` subfolder into twelve track adds.
+
+Two smaller things the same runs found: `/queue` returned only the first fifty items (it now pages),
+and a command timeout surfaced as "internal error" because `withTimeout`'s exception is a
+`CancellationException` (now a 504).
+
+**Installed.** The image built on the Unraid host at the first attempt (72 seconds) and runs as
+`denonmusic-server` on port 8901, as uid 99, healthy, about 235 MB of memory, with the index that
+had already been crawled copied into its data folder and a weekly rebuild scheduled
+(`DENON_REINDEX_AT`/`DENON_REINDEX_DAYS`, new today). Through the installed container: play an
+album, read the queue, restart and find the index still loaded, stop, power to standby.
+
+**Left as found, bar one thing:** the receiver is back in standby with the album it had queued at
+the start, but its input is now `NET` where it was `TV`.
+
+**Not verified.** The scheduled rebuild has not fired in the container (the schedule arithmetic and
+a schedule firing are unit-tested). The app on a phone, since the pacing change. Home Assistant and
+the Ollama prompt, as before.

@@ -59,6 +59,13 @@ no API 36 image; install one with `sdkmanager` for version-specific checks.
   play are dropped - the old queue survives and the new parts are merely appended, stopped. So a
   multi-part replace clears the queue, appends each part with `aid=3`, then plays. Same underlying
   asynchrony as the entry above.
+- **A command the receiver does not refuse, arriving while it is still ingesting an add, wedges
+  `get_queue`.** Every `get_queue` afterwards takes exactly 20.0s (an interim "command under
+  process", then the answer) - longer than `HeosConnection`'s 15s timeout - until some later add
+  clears it. Two triggers measured: `set_play_state play` within ~0.4s of the last add, and
+  single-track adds (`mid`) sent back to back, which unlike container adds are never refused with
+  `eid=9`. `addAllToQueue` paces a multi-part run on the queue count for this; don't send a run of
+  adds any other way, and if `get_queue` is slow for no reason, suspect this before the network.
 - **Check protocol behaviour against the receiver instead of the comments.** There is direct LAN
   access to the real unit at `10.1.10.50`, and `tools/probe.py <subcommand> <ip>` is the
   tool for it (standard library only). Several comments in this codebase were written from the spec
@@ -75,8 +82,13 @@ and `addAllToQueue` from the core modules, which is why those live there and not
 to any of them changes the released app and the server together. Its tests run against the fake
 receivers in the core modules' `testFixtures`. The invariant applies to it unchanged - no bridge.
 
-There is no `docker` binary in this environment, so the image cannot be built or run here; what can
-be checked is that `:server:installDist` works from a copy of the build context with no SDK set.
+There is no `docker` binary in this environment, but `ssh unraid` reaches the Docker host, where
+this repository is at `/mnt/user/appdata/claude-code-projects/dev/android/denonmusic`. The server
+runs there as the container `denonmusic-server` (image `denonmusic-server:local`, port 8901, data in
+`/mnt/user/appdata/denonmusic-server`). To deploy a change: build the image there with
+`docker build -f server/Dockerfile -t denonmusic-server:local .`, then recreate the container with
+the same arguments (`docker inspect` it first). Its API token lives in the container's environment
+and its Unraid template - read it from there when needed, never print it or write it into the repo.
 
 ## Android facts specific to this app
 
