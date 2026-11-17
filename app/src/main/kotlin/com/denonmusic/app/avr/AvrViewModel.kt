@@ -2,14 +2,16 @@ package com.denonmusic.app.avr
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.avr.AvrClient
+import com.denonmusic.avr.AvrConnectionState
+import com.denonmusic.avr.AvrSession
 import com.denonmusic.avr.BitPerfectPolicy
 import com.denonmusic.avr.OutputChannel
 import com.denonmusic.avr.PowerState
 import com.denonmusic.avr.SignalType
 import com.denonmusic.avr.SoundMode
 import com.denonmusic.data.settings.SettingsRepository
+import com.denonmusic.heos.HeosSession
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow

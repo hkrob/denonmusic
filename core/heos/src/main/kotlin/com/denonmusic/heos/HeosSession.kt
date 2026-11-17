@@ -1,8 +1,5 @@
-package com.denonmusic.app.heos
+package com.denonmusic.heos
 
-import com.denonmusic.heos.HeosClient
-import com.denonmusic.heos.HeosConnection
-import com.denonmusic.heos.HeosFrame
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -13,8 +10,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import javax.inject.Inject
-import javax.inject.Singleton
 import kotlin.random.Random
 
 sealed interface HeosConnectionState {
@@ -32,8 +27,10 @@ sealed interface HeosConnectionState {
  * Reconnects both with exponential backoff and jitter, and heartbeats the command socket every 25s
  * per the spec's keepalive guidance.
  */
-@Singleton
-class HeosSession @Inject constructor() {
+class HeosSession(
+    /** The HEOS CLI port. Only ever overridden by a test pointing this at a fake receiver. */
+    private val port: Int = HeosConnection.DEFAULT_PORT,
+) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -108,8 +105,8 @@ class HeosSession @Inject constructor() {
             var events: HeosConnection? = null
             var commands: HeosConnection? = null
             try {
-                events = HeosConnection(host)
-                commands = HeosConnection(host)
+                events = HeosConnection(host, port)
+                commands = HeosConnection(host, port)
                 events.connect()
                 commands.connect()
                 events.command("system", "register_for_change_events", listOf("enable" to "on"))

@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denonmusic.app.browse.QueueAction
 import com.denonmusic.app.heos.HeosPlaybackStarter
-import com.denonmusic.app.heos.HeosSession
+import com.denonmusic.heos.HeosSession
 import com.denonmusic.heos.QueueTarget
 import com.denonmusic.plex.PlexPlaylist
 import com.denonmusic.plex.PlexPlaylistItem

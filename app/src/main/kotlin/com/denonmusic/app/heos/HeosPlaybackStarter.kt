@@ -2,8 +2,8 @@ package com.denonmusic.app.heos
 
 import com.denonmusic.heos.AddCriteria
 import com.denonmusic.heos.HeosClient
-import com.denonmusic.heos.PlayState
 import com.denonmusic.heos.QueueTarget
+import com.denonmusic.heos.addAllToQueue
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -54,9 +54,8 @@ class HeosPlaybackStarter @Inject constructor(private val bridgeQueue: BridgeQue
     ) = starting { client.addToQueue(pid = pid, sid = sid, cid = cid, mid = mid, criteria = criteria) }
 
     /**
-     * Queues a whole resolved subtree. Only the first part carries [criteria]; every part after it
-     * always appends, or a multi-part "replace and play" would replace the queue anew on each call
-     * and leave only the last part in it. [onQueued] reports parts completed, for a progress display.
+     * Queues a whole resolved subtree - see [addAllToQueue] in `:core:heos` for the sequencing, which
+     * lives there so the headless server inherits it rather than restating it.
      *
      * The bridge queue is cleared once at the end rather than per part - clearing per part would just
      * re-clear an already-empty queue on every iteration after the first.
@@ -67,31 +66,7 @@ class HeosPlaybackStarter @Inject constructor(private val bridgeQueue: BridgeQue
         targets: List<QueueTarget>,
         criteria: AddCriteria,
         onQueued: (completed: Int) -> Unit = {},
-    ) = starting {
-        // `aid=4` means "replace the queue and play", and the receiver carries it out in its own
-        // time. Measured on a real AVR-X4500H: sent alone it replaces correctly, but with a second
-        // add arriving straight after it, *both* halves of it are lost - the old queue survives and
-        // the new parts are merely appended, and playback never starts. That is the whole of the
-        // "play all queued the album but played nothing" report, and it also silently appended to
-        // whatever was queued before instead of replacing it.
-        //
-        // So a multi-part replace does not ask for aid=4 at all. Clearing the queue and appending
-        // every part is the same intent expressed in steps the receiver cannot half-apply, and the
-        // play at the end then always starts the first track of what was just queued, because the
-        // queue began empty. Verified against the receiver.
-        val replacing = criteria == AddCriteria.ReplaceAndPlay && targets.size > 1
-        if (replacing) client.clearQueue(pid)
-
-        targets.forEachIndexed { index, target ->
-            val partCriteria = if (index == 0 && !replacing) criteria else AddCriteria.AddToEnd
-            client.addToQueue(pid = pid, sid = target.sid, cid = target.cid, mid = target.mid, criteria = partCriteria)
-            onQueued(index + 1)
-        }
-
-        // Best-effort: a queue that was built correctly should not be reported as a failure just
-        // because the receiver would not start (powered off, or on another input).
-        if (replacing) runCatching { client.setPlayState(pid, PlayState.Play) }
-    }
+    ) = starting { client.addAllToQueue(pid, targets, criteria, onQueued) }
 
     suspend fun playQueueItem(client: HeosClient, pid: String, qid: Int) =
         starting { client.playQueueItem(pid, qid) }

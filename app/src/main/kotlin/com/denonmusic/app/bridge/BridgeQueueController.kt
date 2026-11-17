@@ -1,7 +1,7 @@
 package com.denonmusic.app.bridge
 
-import com.denonmusic.app.heos.HeosConnectionState
-import com.denonmusic.app.heos.HeosSession
+import com.denonmusic.heos.HeosConnectionState
+import com.denonmusic.heos.HeosSession
 import com.denonmusic.heos.RepeatMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

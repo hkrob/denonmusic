@@ -6,10 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.denonmusic.app.browse.BrowseRepository
 import com.denonmusic.app.browse.QueueAction
 import com.denonmusic.app.heos.HeosPlaybackStarter
-import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.app.playlists.AddToPlaylistOutcome
 import com.denonmusic.app.playlists.PlaylistRepository
 import com.denonmusic.app.playlists.PlexLookupTrack
+import com.denonmusic.heos.HeosSession
 import com.denonmusic.plex.PlexPlaylist
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext

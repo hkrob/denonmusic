@@ -4,13 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denonmusic.app.bridge.BridgeQueueController
 import com.denonmusic.app.bridge.BridgeQueueItem
-import com.denonmusic.app.heos.HeosConnectionState
 import com.denonmusic.app.heos.HeosPlaybackStarter
-import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.data.browse.BrowseStackEntity
 import com.denonmusic.data.settings.SettingsRepository
 import com.denonmusic.heos.AddCriteria
 import com.denonmusic.heos.BrowseItem
+import com.denonmusic.heos.HeosConnectionState
+import com.denonmusic.heos.HeosSession
 import com.denonmusic.heos.QueueCollection
 import com.denonmusic.heos.QueueTargetResolver
 import dagger.hilt.android.lifecycle.HiltViewModel

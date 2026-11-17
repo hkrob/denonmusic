@@ -53,11 +53,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.denonmusic.app.bridge.SmbBrowseViewModel
-import com.denonmusic.app.heos.HeosConnectionState
 import com.denonmusic.app.ui.Winamp
 import com.denonmusic.app.ui.bevel
 import com.denonmusic.app.ui.fileTypeLabel
 import com.denonmusic.heos.BrowseItem
+import com.denonmusic.heos.HeosConnectionState
 import com.denonmusic.smb.SmbEntry
 import kotlinx.coroutines.launch
 

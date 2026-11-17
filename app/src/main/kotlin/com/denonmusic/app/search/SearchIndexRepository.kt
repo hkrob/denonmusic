@@ -2,12 +2,12 @@ package com.denonmusic.app.search
 
 import com.denonmusic.app.browse.BrowseLevel
 import com.denonmusic.app.browse.SourceRepository
-import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.data.search.SearchIndexDao
 import com.denonmusic.data.search.SearchIndexEntity
 import com.denonmusic.data.search.fromPathJson
 import com.denonmusic.data.search.toPathJson
 import com.denonmusic.data.settings.SettingsRepository
+import com.denonmusic.heos.HeosSession
 import com.denonmusic.heos.LibraryEntry
 import com.denonmusic.heos.LibraryIndexer
 import kotlinx.coroutines.CancellationException

@@ -1,14 +1,14 @@
 package com.denonmusic.app.player
 
-import com.denonmusic.app.avr.AvrSession
 import com.denonmusic.app.avr.BitPerfectPolicyController
 import com.denonmusic.app.bridge.BridgeQueueController
-import com.denonmusic.app.heos.HeosConnectionState
-import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.app.lancontrol.LanControlManager
 import com.denonmusic.app.notification.NowPlayingNotifier
 import com.denonmusic.app.notification.NowPlayingShade
+import com.denonmusic.avr.AvrSession
 import com.denonmusic.data.settings.SettingsRepository
+import com.denonmusic.heos.HeosConnectionState
+import com.denonmusic.heos.HeosSession
 import com.denonmusic.heos.PlayState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

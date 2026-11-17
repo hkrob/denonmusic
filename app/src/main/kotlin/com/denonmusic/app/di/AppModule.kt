@@ -9,6 +9,7 @@ import androidx.room.Room
 import com.denonmusic.app.bridge.BridgeQueueController
 import com.denonmusic.app.heos.BridgeQueueClearer
 import com.denonmusic.app.heos.HeosPlaybackStarter
+import com.denonmusic.avr.AvrSession
 import com.denonmusic.data.AppDatabase
 import com.denonmusic.data.browse.BrowseCacheDao
 import com.denonmusic.data.browse.BrowseStackDao
@@ -16,6 +17,7 @@ import com.denonmusic.data.media.MediaInfoCacheDao
 import com.denonmusic.data.search.SearchIndexDao
 import com.denonmusic.data.settings.EncryptedSecretStore
 import com.denonmusic.data.settings.SettingsRepository
+import com.denonmusic.heos.HeosSession
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -73,4 +75,17 @@ object AppModule {
     @Singleton
     fun provideBridgeQueueClearer(controller: BridgeQueueController): BridgeQueueClearer =
         BridgeQueueClearer { controller.clear() }
+
+    /**
+     * The two session classes live in the pure-JVM protocol modules, which carry no injection
+     * annotations, so their singleton-ness is declared here instead. It is not optional: every
+     * control surface must share the one set of sockets, or two of them reconnect over each other.
+     */
+    @Provides
+    @Singleton
+    fun provideHeosSession(): HeosSession = HeosSession()
+
+    @Provides
+    @Singleton
+    fun provideAvrSession(): AvrSession = AvrSession()
 }

@@ -1,8 +1,5 @@
-package com.denonmusic.app.avr
+package com.denonmusic.avr
 
-import com.denonmusic.avr.AvTransportClient
-import com.denonmusic.avr.AvrClient
-import com.denonmusic.avr.AvrConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,8 +11,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import javax.inject.Inject
-import javax.inject.Singleton
 import kotlin.random.Random
 
 sealed interface AvrConnectionState {
@@ -27,11 +22,13 @@ sealed interface AvrConnectionState {
 
 /**
  * Owns the single telnet socket to the AVR control port and reconnects it with backoff, the same
- * shape as [com.denonmusic.app.heos.HeosSession] but for one socket instead of two - this protocol
+ * shape as [com.denonmusic.heos.HeosSession] but for one socket instead of two - this protocol
  * has no separate event registration handshake, so there's nothing to split.
  */
-@Singleton
-class AvrSession @Inject constructor() {
+class AvrSession(
+    /** The telnet control port. Only ever overridden by a test pointing this at a fake receiver. */
+    private val port: Int = AvrConnection.DEFAULT_PORT,
+) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -75,7 +72,7 @@ class AvrSession @Inject constructor() {
         while (kotlinx.coroutines.currentCoroutineContext().isActive) {
             _state.value = AvrConnectionState.Connecting
             try {
-                val newConnection = AvrConnection(host)
+                val newConnection = AvrConnection(host, port)
                 newConnection.connect()
                 connection = newConnection
                 client = AvrClient(newConnection)

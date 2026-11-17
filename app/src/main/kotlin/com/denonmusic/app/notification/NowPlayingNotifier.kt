@@ -1,8 +1,8 @@
 package com.denonmusic.app.notification
 
 import com.denonmusic.app.bridge.BridgeQueueController
-import com.denonmusic.app.heos.HeosSession
 import com.denonmusic.app.player.PlayerUiState
+import com.denonmusic.heos.HeosSession
 import com.denonmusic.heos.PlayState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
