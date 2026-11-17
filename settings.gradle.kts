@@ -24,6 +24,9 @@ include(":core:avr")
 include(":core:smb")
 include(":core:plex")
 
+// The headless control server: also pure JVM, built on the protocol modules above.
+include(":server")
+
 // Android modules need an SDK. Including them unconditionally makes `./gradlew
 // :core:heos:test` fail at configuration time on a machine without one, which would
 // defeat the point of keeping the protocol layer Android-free. Gate them instead.

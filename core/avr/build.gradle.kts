@@ -2,6 +2,9 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    // The fake receiver the tests here run against is shared with :server, which needs the same
+    // loopback harness rather than a second copy of it.
+    `java-test-fixtures`
 }
 
 // Pure JVM, like :core:heos: a telnet client needs no Android dependency, so keep it testable on
