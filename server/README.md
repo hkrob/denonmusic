@@ -71,6 +71,17 @@ queues at most 25 folders, so "play Prince" plays the first 25 of however many t
 
 With no `type`, a name shared by several kinds goes artist, then album, then folder, then track.
 
+`/search?type=` keeps only that kind. `/search?prefer=`, and the `type` an `/intent` carries, only
+rank that kind higher. The `type` in an intent comes from a language model, and measured against
+four models it guessed "track" or "album" from what it knew about the music about one time in three
+when nobody had said either word; filtering on those guesses found the wrong record or nothing.
+An unknown `type` in an intent is ignored rather than refused.
+
+Matching ignores case, accents, punctuation and apostrophes of either kind ("Let’s" is "lets"), and
+reads dotted initials as one word ("Run-D.M.C." is "run dmc"). An artist named alongside a title
+adds to a match's score when every word of it is found, costs it nothing when half is ("basement
+jacks" for Basement Jaxx), and counts against it otherwise.
+
 ## API
 
 Every route but `/health` needs the token.
@@ -79,7 +90,7 @@ Every route but `/health` needs the token.
 |---|---|
 | `GET /health` | Whether both control connections are up, and the index state. No token |
 | `GET /status` | Now playing, play state, volume, mute, power, input, sound mode |
-| `GET /search?q=&artist=&type=&limit=` | Ranked matches, each with the `sid`/`cid`/`mid` to queue it, or `folders` for an album or artist. `type` is `track`, `album`, `artist`, `folder` or `any` |
+| `GET /search?q=&artist=&type=&limit=` | Ranked matches, each with the `sid`/`cid`/`mid` to queue it, or `folders` for an album or artist. `type` (a filter) and `prefer` (a preference) are `track`, `album`, `artist`, `folder` or `any` |
 | `POST /intent` | JSON body `{"action","query","artist","type"}` - see below |
 | `POST /queue/add?sid=&cid=&mid=&criteria=` | Queue a track, or everything under a folder when `mid` is absent. `criteria` is `PlayNow`, `PlayNext`, `AddToEnd` or `ReplaceAndPlay` |
 | `GET /queue`, `POST /queue/play?qid=`, `POST /queue/clear` | The real HEOS queue |

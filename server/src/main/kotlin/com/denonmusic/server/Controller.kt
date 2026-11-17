@@ -264,8 +264,9 @@ class Controller(
 
     // -- search and intent -------------------------------------------------
 
-    fun search(query: String, artist: String?, type: String?, limit: Int): JsonObject {
-        val hits = index.search(query, artist, parseKind(type), limit.coerceIn(1, MAX_SEARCH_LIMIT))
+    /** [type] filters to one kind; [prefer] only ranks that kind higher, as `/intent` does. */
+    fun search(query: String, artist: String?, type: String?, limit: Int, prefer: String? = null): JsonObject {
+        val hits = index.search(query, artist, parseKind(type), limit.coerceIn(1, MAX_SEARCH_LIMIT), parseKind(prefer))
         return buildJsonObject {
             put("index", index.status.state)
             putJsonArray("results") { hits.forEach { add(it.toJson()) } }
@@ -307,7 +308,9 @@ class Controller(
         if (index.status.count == 0) {
             throw ApiException(503, "the library index is ${index.status.state} - POST /index/rebuild and wait for it")
         }
-        val hits = index.search(query, artist, parseKind(type), limit = 5)
+        // The type came from a language model, so it is a preference, and one it made up is ignored.
+        val preferred = runCatching { parseKind(type) }.getOrNull()
+        val hits = index.search(query, artist, limit = 5, preferKind = preferred)
         val best = hits.firstOrNull() ?: throw ApiException(404, "nothing in the library matched '$query'")
         val criteria = when (action) {
             "play" -> AddCriteria.ReplaceAndPlay

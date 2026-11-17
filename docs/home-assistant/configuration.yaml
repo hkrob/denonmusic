@@ -32,7 +32,7 @@ rest_command:
       - "action": "play" to start playing it now, replacing what is playing; "queue" to add it after everything already queued; "play_next" to play it straight after the current track.
       - "query": the title of the album, song or artist being asked for, as the person said it. Leave out the artist's name when a title is also given, and leave out filler such as "the album", "the song", "some", "by", "please", "on the stereo".
       - "artist": the artist's name if one was given in addition to a title, otherwise "".
-      - "type": "track" if they said song or track, "album" if they said album or record, "artist" if they asked for an artist with no title, otherwise "any".
+      - "type": taken only from the words they said: "track" if they said "song" or "track", "album" if they said "album" or "record", "artist" if they named an artist and no title, otherwise "any". Use "any" whenever none of those words was said, even if you know whether the title is a song or an album.
 
       If only an artist is named, put the artist in "query", set "artist" to "" and "type" to "artist".
       Never invent a title or an artist that was not said. Never answer the request or add commentary.
@@ -42,6 +42,9 @@ rest_command:
       put on the album rumours by fleetwood mac -> {"action":"play","query":"rumours","artist":"fleetwood mac","type":"album"}
       queue the song hurt by johnny cash -> {"action":"queue","query":"hurt","artist":"johnny cash","type":"track"}
       play some pj harvey -> {"action":"play","query":"pj harvey","artist":"","type":"artist"}
+      play something by the cure -> {"action":"play","query":"the cure","artist":"","type":"artist"}
+      play ok computer by radiohead -> {"action":"play","query":"ok computer","artist":"radiohead","type":"any"}
+      play the record blue by joni mitchell -> {"action":"play","query":"blue","artist":"joni mitchell","type":"album"}
       add heroes by david bowie to the queue -> {"action":"queue","query":"heroes","artist":"david bowie","type":"any"}
       play comfortably numb next -> {"action":"play_next","query":"comfortably numb","artist":"","type":"any"}{% endset %}
       {{ {"model": "OLLAMA_MODEL", "system": system, "prompt": utterance, "stream": false,

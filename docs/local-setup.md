@@ -1420,3 +1420,35 @@ the start, but its input is now `NET` where it was `TV`.
 **Not verified.** The scheduled rebuild has not fired in the container (the schedule arithmetic and
 a schedule firing are unit-tested). The app on a phone, since the pacing change. Home Assistant and
 the Ollama prompt, as before.
+
+## The voice prompt against real models, and what it changed in search (2026-11-17)
+
+**Run.** The Home Assistant prompt (`docs/home-assistant/ollama-prompt.txt`) went to the local
+Ollama with the request body `denon_parse_utterance` sends (`format: json`, temperature 0), for
+`llama3.2:3b`, `gemma3:4b`, `hermes3:8b`, `gemma3:12b`, `qwen3:8b` and `qwen3:30b`. The requests
+were built from titles in the real library and phrased as Home Assistant hands them over (verb
+first). Twenty were used while revising the prompt; sixteen more were written then and not run until
+the revision was done. Each answer was then searched in a copy of the real index. One run each.
+
+**What the models get wrong is the kind.** Action, title and artist were nearly always right; every
+answer was JSON. But when nobody said "song", "track", "album" or "record", the four fast models
+answered "track" or "album" 25 times in 80, from what they knew about the music ("Remedy" is a song).
+Telling them not to, with examples, moved this by a case or two. With `type` as a hard filter that
+cost real requests: "play remedy by basement jacks" as a track found Snoop Lion, and several came
+back with nothing.
+
+**So in `/intent` the kind is now a preference** (+10 for the named kind) instead of a filter, and an
+unknown kind is ignored. `/search?type=` still filters; `/search?prefer=` ranks the way `/intent`
+does. Right record and right action, of 36, filter -> preference: `gemma3:12b` 32 -> 35,
+`gemma3:4b` 29 -> 33, `hermes3:8b` 31 -> 33, `llama3.2:3b` 30 -> 32. The qwen3 models scored
+20/20 on the first set but take 5 and 37 seconds, thinking first; `gemma3:12b` takes 2.2.
+
+**Two search bugs the same runs found.** Tags here mostly spell apostrophes as U+2019, which
+normalised to a space ("I’m" -> "i m"), so "im gonna be 500 miles by the proclaimers" found a
+Various Artists copy with a straight apostrophe instead. And an artist half heard right ("basement
+jacks") scored as a wrong artist. Both apostrophes now fold away, dotted initials read as one word
+("Run‐D.M.C." -> "run dmc"), and an artist with at least half its words found is neutral.
+
+**Not verified.** Any of this inside Home Assistant, or by voice: the utterances were typed, and a
+real speech recogniser will mishear differently. No `/intent` from this change reached the
+receiver; the queue code it calls is unchanged and was tested on hardware earlier today.

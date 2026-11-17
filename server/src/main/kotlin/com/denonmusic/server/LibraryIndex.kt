@@ -211,8 +211,13 @@ class LibraryIndex(
         Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
     }
 
-    fun search(query: String, artist: String? = null, kind: SearchRanking.Kind? = null, limit: Int = 10) =
-        SearchRanking.rank(searchable, query, artist, kind, limit)
+    fun search(
+        query: String,
+        artist: String? = null,
+        kind: SearchRanking.Kind? = null,
+        limit: Int = 10,
+        preferKind: SearchRanking.Kind? = null,
+    ) = SearchRanking.rank(searchable, query, artist, kind, limit, preferKind)
 
     private fun publish(crawled: List<IndexedEntry>) {
         entries = crawled

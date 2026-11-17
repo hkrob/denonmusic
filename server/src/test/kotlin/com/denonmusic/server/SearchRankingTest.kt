@@ -21,6 +21,9 @@ class SearchRankingTest {
         context = listOfNotNull(artist, album).joinToString(" "),
     )
 
+    private fun album(name: String, artist: String) =
+        IndexedEntry(name = name, artist = artist, kind = Kind.Album, sid = "1", context = artist)
+
     private fun best(entries: List<IndexedEntry>, query: String, artist: String? = null, kind: Kind? = null) =
         SearchRanking.rank(entries, query, artist, kind).firstOrNull()?.entry?.name
 
@@ -29,6 +32,12 @@ class SearchRankingTest {
         assertEquals("bjork debut 1993", SearchRanking.normalize("Björk - Début (1993)"))
         assertEquals("guns n roses", SearchRanking.normalize("Guns N' Roses"))
         assertEquals("simon and garfunkel", SearchRanking.normalize("Simon & Garfunkel"))
+        assertEquals("im gonna be 500 miles", SearchRanking.normalize("I\u2019m Gonna Be (500 Miles)"))
+        assertEquals("jump n shout", SearchRanking.normalize("Jump n\u2019 Shout"))
+        assertEquals("run dmc", SearchRanking.normalize("Run\u2010D.M.C."))
+        assertEquals("rem out of time", SearchRanking.normalize("R.E.M. - Out of Time"))
+        assertEquals("st elsewhere", SearchRanking.normalize("St. Elsewhere"))
+        assertEquals("vol 2", SearchRanking.normalize("Vol.2"))
     }
 
     @Test
@@ -77,6 +86,33 @@ class SearchRankingTest {
 
         assertEquals("Johnny Cash", SearchRanking.rank(entries, "hurt", artist = "johnny cash").first().entry.artist)
         assertEquals("Nine Inch Nails", SearchRanking.rank(entries, "hurt", artist = "nine inch nails").first().entry.artist)
+    }
+
+    @Test
+    fun `an artist half heard right still counts, a wholly different one does not`() {
+        val entries = listOf(album("Remedy", "Basement Jaxx"), track("Remedy", "Snoop Lion"))
+
+        assertEquals("Basement Jaxx", SearchRanking.rank(entries, "remedy", artist = "basement jacks").first().entry.artist)
+        assertEquals("Snoop Lion", SearchRanking.rank(entries, "remedy", artist = "snoop lion").first().entry.artist)
+    }
+
+    @Test
+    fun `a preferred kind ranks higher without hiding the rest`() {
+        val entries = listOf(album("Let's Go Crazy", "Prince"), track("Let\u2019s Go Crazy", "Prince"))
+
+        assertEquals(Kind.Album, SearchRanking.rank(entries, "lets go crazy", artist = "prince").first().entry.kind)
+        val preferred = SearchRanking.rank(entries, "lets go crazy", artist = "prince", preferKind = Kind.Track)
+        assertEquals(Kind.Track, preferred.first().entry.kind)
+        // A wrong guess still finds something: there is no artist entry here at all.
+        assertEquals(2, SearchRanking.rank(entries, "lets go crazy", preferKind = Kind.Artist).size)
+    }
+
+    @Test
+    fun `a preferred kind does not outweigh the artist that was named`() {
+        val entries = listOf(album("Remedy", "Basement Jaxx"), track("Remedy", "Snoop Lion"))
+
+        val ranked = SearchRanking.rank(entries, "remedy", artist = "basement jacks", preferKind = Kind.Track)
+        assertEquals("Basement Jaxx", ranked.first().entry.artist)
     }
 
     @Test

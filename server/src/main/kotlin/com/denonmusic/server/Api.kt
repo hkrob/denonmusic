@@ -51,7 +51,7 @@ fun Application.api(config: Config, controller: Controller) {
         get("/search") {
             call.api(config) { params ->
                 val query = params["q"]?.takeIf { it.isNotBlank() } ?: throw ApiException(400, "missing 'q'")
-                controller.search(query, params["artist"], params["type"], params.int("limit") ?: 10)
+                controller.search(query, params["artist"], params["type"], params.int("limit") ?: 10, params["prefer"])
             }
         }
         post("/intent") {

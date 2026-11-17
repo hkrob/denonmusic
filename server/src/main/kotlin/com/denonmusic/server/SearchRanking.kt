@@ -25,22 +25,38 @@ object SearchRanking {
      */
     private val KIND_PREFERENCE = mapOf(Kind.Artist to 4, Kind.Album to 3, Kind.Container to 2, Kind.Track to 0)
 
+    /**
+     * Added for the kind a spoken request mentioned. Only a nudge: the language model that fills in
+     * the kind guesses it from what it thinks it knows about the music ("Remedy" is a song, so
+     * "track"), about one time in three when no kind was said, and a hard filter on a wrong guess
+     * finds the wrong record or nothing. Measured against four models: docs/local-setup.md, 2026-11-17.
+     */
+    private const val PREFERRED_KIND_BONUS = 10
+
     data class Scored(val entry: IndexedEntry, val score: Int)
 
     private val NON_ALPHANUMERIC = Regex("[^\\p{L}\\p{N}]+")
     private val DIACRITICS = Regex("\\p{M}+")
 
+    // Tags in this library mostly spell apostrophes as U+2019 ("Let’s Go Crazy"); speech never does.
+    private val APOSTROPHES = Regex("['\u2018\u2019\u02BC`\u00B4]")
+
+    // "R.E.M.", "Run-D.M.C.": dotted initials are said, and transcribed, as one word.
+    private val DOTTED_INITIALS = Regex("(?<![\\p{L}\\p{N}])\\p{L}(?:\\.\\p{L})+\\.?(?![\\p{L}\\p{N}])")
+
     /** Words a speech recogniser adds or drops freely, so they must not decide a match. */
     private val STOP_WORDS = setOf("the", "a", "an", "by", "of", "and")
 
     /** Lowercased, accents folded, punctuation to spaces: "Björk - Début (1993)" -> "bjork debut 1993". */
-    fun normalize(text: String): String =
-        DIACRITICS.replace(Normalizer.normalize(text, Normalizer.Form.NFKD), "")
+    fun normalize(text: String): String {
+        val folded = DIACRITICS.replace(Normalizer.normalize(text, Normalizer.Form.NFKD), "")
             .lowercase()
             .replace("&", " and ")
-            .replace("'", "")
+            .replace(APOSTROPHES, "")
+        return DOTTED_INITIALS.replace(folded) { it.value.replace(".", "") }
             .replace(NON_ALPHANUMERIC, " ")
             .trim()
+    }
 
     private fun tokens(normalized: String): List<String> = normalized.split(' ').filter { it.isNotEmpty() }
 
@@ -53,6 +69,7 @@ object SearchRanking {
         artist: String? = null,
         kind: Kind? = null,
         limit: Int = 10,
+        preferKind: Kind? = null,
     ): List<Scored> {
         val queryNorm = normalize(query)
         if (queryNorm.isEmpty()) return emptyList()
@@ -61,7 +78,7 @@ object SearchRanking {
 
         return entries.asSequence()
             .filter { kind == null || it.kind == kind }
-            .mapNotNull { entry -> score(entry, queryNorm, queryTokens, artistTokens, kind)?.let { Scored(entry, it) } }
+            .mapNotNull { entry -> score(entry, queryNorm, queryTokens, artistTokens, kind, preferKind)?.let { Scored(entry, it) } }
             .sortedWith(compareByDescending<Scored> { it.score }.thenBy { it.entry.name.length })
             .take(limit)
             .toList()
@@ -73,6 +90,7 @@ object SearchRanking {
         queryTokens: List<String>,
         artistTokens: List<String>,
         kind: Kind?,
+        preferKind: Kind?,
     ): Int? {
         val nameTokens = tokens(entry.nameNorm)
         val nameSignificant = significant(nameTokens)
@@ -96,9 +114,17 @@ object SearchRanking {
         // tier it landed in: "Moon" should prefer the album "Moon" to "Moonlight Sonata (Live)".
         score -= (nameSignificant.size - queryTokens.size).coerceIn(0, 8)
         if (artistTokens.isNotEmpty()) {
-            score += if ((contextTokens + nameTokens).containsAll(artistTokens)) 15 else -20
+            val around = contextTokens + nameTokens
+            score += when {
+                around.containsAll(artistTokens) -> 15
+                // Half the artist's name heard right is a mishearing, not a different artist:
+                // "basement jacks" is Basement Jaxx.
+                artistTokens.count { it in around } * 2 >= artistTokens.size -> 0
+                else -> -20
+            }
         }
         if (kind == null) score += KIND_PREFERENCE.getValue(entry.kind)
+        if (preferKind != null && entry.kind == preferKind) score += PREFERRED_KIND_BONUS
         return score
     }
 }
