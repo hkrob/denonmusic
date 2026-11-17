@@ -23,6 +23,19 @@ class FakeReceiver : Closeable {
         )
     }
 
+    init {
+        // What addAllToQueue paces itself on: a queue that grows by one for every add accepted
+        // since it was last cleared, and has always finished ingesting by the time it is asked.
+        heos.on("player/get_queue") { line ->
+            val sinceClear = heos.received.takeLastWhile { !it.startsWith("heos://player/clear_queue") }
+            val count = sinceClear.count { it.startsWith("heos://browse/add_to_queue") }
+            listOf(
+                """{"heos":{"command":"player/get_queue","result":"success","message":"pid=7&returned=0&count=$count""" +
+                    """&${HeosProtocol.SEQUENCE}=${FakeHeosServer.sequenceArgOf(line)}"},"payload":[]}""",
+            )
+        }
+    }
+
     fun config(dataDir: java.io.File, maxVolume: Int = 60) = Config(
         receiverHost = heos.host,
         apiToken = TOKEN,
@@ -61,7 +74,8 @@ class FakeReceiver : Closeable {
 
     companion object {
         const val TOKEN = "test-token"
-        private val QUIET = setOf("system/register_for_change_events", "system/heart_beat", "player/get_players")
+        private val QUIET =
+            setOf("system/register_for_change_events", "system/heart_beat", "player/get_players", "player/get_queue")
 
         fun track(name: String, mid: String, artist: String = "", album: String = "") =
             """{"container":"no","playable":"yes","type":"song","name":"$name","mid":"$mid","artist":"$artist","album":"$album"}"""

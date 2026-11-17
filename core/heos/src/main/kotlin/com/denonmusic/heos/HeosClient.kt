@@ -77,6 +77,13 @@ class HeosClient(private val connection: HeosConnection) {
         connection.command("player", "get_queue", listOf("pid" to pid, "range" to "$start,$end"))
             .payload?.toQueueItems().orEmpty()
 
+    /**
+     * How many items the receiver says are in the queue, or null if it did not say. One row is
+     * asked for because the answer wanted is the `count` beside it, not the row.
+     */
+    suspend fun getQueueCount(pid: String): Int? =
+        connection.command("player", "get_queue", listOf("pid" to pid, "range" to "0,0")).attributes["count"]?.toIntOrNull()
+
     suspend fun playQueueItem(pid: String, qid: Int) =
         connection.command("player", "play_queue", listOf("pid" to pid, "qid" to qid.toString()))
 

@@ -197,6 +197,23 @@ class LibraryIndexTest {
     }
 
     @Test
+    fun `a schedule starts a crawl when its moment arrives and reports the one after`() {
+        fake.serveTree(tree)
+        val index = index()
+        // A schedule whose next moment is a fraction of a second away, whatever the time is now.
+        val soon = java.time.ZonedDateTime.now().plusSeconds(2).withNano(0)
+        val schedule = IndexSchedule(soon.toLocalTime(), java.time.DayOfWeek.entries.toSet())
+
+        index.runOn(schedule)
+
+        awaitTrue("the scheduled crawl") { index.status.state == "ready" }
+        assertEquals(3, index.status.count)
+        awaitTrue("the following occurrence to be announced") {
+            (index.status.nextScheduledAt ?: 0) > soon.toInstant().toEpochMilli()
+        }
+    }
+
+    @Test
     fun `a second rebuild is refused while one is running`() {
         // No browse responder at all, so the crawl sits waiting on its first folder.
         val index = index()

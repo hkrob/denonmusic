@@ -28,11 +28,13 @@ fun main() {
     index.load()
     receiver.start()
 
-    // The index is never built unasked: a crawl is tens of minutes of browse traffic at the
-    // receiver, and when that is acceptable is the owner's call. POST /index/rebuild starts one.
+    // Never built unasked: a crawl is half an hour of browse traffic at the receiver, so it runs
+    // when POST /index/rebuild says so, or on the schedule the owner set - not on every start.
+    config.indexSchedule?.let(index::runOn)
     println("denonmusic-server: receiver ${config.receiverHost}, index ${index.status.state} (${index.status.count} entries)")
+    println("denonmusic-server: scheduled rebuild " + (config.indexSchedule?.let { "at ${it.time} on ${it.days.sorted()}" } ?: "off"))
 
-    val server = embeddedServer(CIO, port = config.httpPort) { api(config, Controller(config, receiver, index)) }
+    val server = embeddedServer(CIO, port = config.httpPort) { api(config, Controller(config, receiver, index, scope)) }
     Runtime.getRuntime().addShutdownHook(
         Thread {
             server.stop(gracePeriodMillis = 500, timeoutMillis = 2_000)

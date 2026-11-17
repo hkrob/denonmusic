@@ -77,7 +77,7 @@ class ApiTest {
     }
 
     private fun api(test: suspend ApplicationTestBuilder.() -> Unit) = testApplication {
-        application { api(config, Controller(config, receiver, index)) }
+        application { api(config, Controller(config, receiver, index, scope, firstAddSettleMillis = 50)) }
         test()
     }
 
@@ -138,7 +138,8 @@ class ApiTest {
      */
     @Test
     fun `a malformed percent escape is a bad request, with or without the token`() {
-        val server = embeddedServer(CIO, port = 0) { api(config, Controller(config, receiver, index)) }.start()
+        val controller = Controller(config, receiver, index, scope, firstAddSettleMillis = 50)
+        val server = embeddedServer(CIO, port = 0) { api(config, controller) }.start()
         try {
             val port = runBlocking { server.engine.resolvedConnectors().first().port }
 
@@ -188,6 +189,26 @@ class ApiTest {
 
         assertEquals(80, response.json()["volume"]!!.jsonPrimitive.content.toInt())
         assertFalse(fake.sent().any { it.startsWith("player/set_volume") })
+    }
+
+    @Test
+    fun `the queue is read to its end, not just its first page`() = api {
+        fake.heos.on("player/get_queue") { line ->
+            val range = com.denonmusic.heos.HeosProtocol.parseMessage(line.substringAfter('?', ""))["range"]!!
+            val (start, end) = range.split(',').map { it.toInt() }
+            val items = (start..minOf(end, 119)).joinToString(",") {
+                """{"song":"s$it","album":"a","artist":"b","qid":${it + 1},"mid":"m$it"}"""
+            }
+            listOf(
+                """{"heos":{"command":"player/get_queue","result":"success","message":"pid=7&range=$range""" +
+                    """&SEQUENCE=${com.denonmusic.heos.FakeHeosServer.sequenceArgOf(line)}"},"payload":[$items]}""",
+            )
+        }
+
+        val queue = Json.parseToJsonElement(authedGet("/queue").bodyAsText()).jsonArray
+
+        assertEquals(120, queue.size)
+        assertEquals(120, queue.last().jsonObject["qid"]!!.jsonPrimitive.content.toInt())
     }
 
     @Test
@@ -253,10 +274,47 @@ class ApiTest {
     }
 
     @Test
-    fun `playing a multi-disc album walks it and uses the clear, append, play sequence`() = api {
+    fun `playing a multi-folder album starts the first folder alone and appends the rest behind it`() = api {
         buildIndex(library)
 
         val response = authedPost("/intent", """{"action":"play","query":"the wall","type":"album"}""")
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        awaitTrue("the second folder to be appended") { fake.sent("cid", "aid").any { it == "browse/add_to_queue cid=cd2 aid=3" } }
+        // aid=4 goes alone - never as one of a run, which is the form the receiver drops.
+        assertEquals(
+            listOf("browse/add_to_queue cid=cd1 aid=4", "browse/add_to_queue cid=cd2 aid=3"),
+            fake.sent("cid", "aid").filter { it.startsWith("browse/add_to_queue") },
+        )
+        assertFalse(fake.sent().any { it.startsWith("browse/browse") }, "an album's folders are queued as they are, not walked")
+    }
+
+    @Test
+    fun `a new request stops the previous one's appends`() = api {
+        val folders = (1..20).map { "f$it" }
+        buildIndex(
+            mapOf<String?, List<String>>(null to folders.map { FakeReceiver.folder("Album $it", it) }) +
+                folders.associateWith { listOf(track("Song $it", "m$it", "Prolific", "Album $it")) },
+        )
+
+        authedPost("/intent", """{"action":"play","query":"prolific","type":"artist"}""")
+        authedPost("/intent", """{"action":"play","query":"song f3","type":"track"}""")
+        val afterSecond = fake.sent("mid", "aid").indexOfLast { it == "browse/add_to_queue mid=mf3 aid=4" }
+        Thread.sleep(600)
+
+        assertTrue(afterSecond >= 0)
+        assertEquals(
+            emptyList(),
+            fake.sent("mid", "aid").drop(afterSecond + 1).filter { it.startsWith("browse/add_to_queue") },
+            "nothing from the first request may be added after the second replaced the queue",
+        )
+    }
+
+    @Test
+    fun `an explicit container add walks it and uses the clear, append, play sequence`() = api {
+        buildIndex(library)
+
+        val response = authedPost("/queue/add?sid=1024&cid=wall&criteria=ReplaceAndPlay")
 
         assertEquals(HttpStatusCode.OK, response.status)
         val sent = fake.sent("cid", "mid", "aid", "state").filterNot { it.startsWith("browse/browse") }
@@ -278,6 +336,8 @@ class ApiTest {
         val reply = authedPost("/intent", """{"action":"play","query":"prolific","type":"artist"}""").json()
 
         assertEquals("Playing Prolific, the first 25 of 30 albums", reply["speech"]!!.jsonPrimitive.content)
+        awaitTrue("all 25 folders to be queued") { fake.sent("aid").count { it.startsWith("browse/add_to_queue") } == 25 }
+        Thread.sleep(300)
         assertEquals(25, fake.sent("aid").count { it.startsWith("browse/add_to_queue") })
     }
 

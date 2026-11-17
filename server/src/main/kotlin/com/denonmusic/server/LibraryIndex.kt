@@ -16,6 +16,8 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.time.Duration
+import java.time.ZonedDateTime
 
 /** A folder to queue: one part of an album or an artist that is spread over several. */
 @Serializable
@@ -58,6 +60,7 @@ data class IndexStatus(
     val indexedAt: Long? = null,
     val found: Int? = null,
     val error: String? = null,
+    val nextScheduledAt: Long? = null,
 )
 
 /**
@@ -95,6 +98,9 @@ class LibraryIndex(
     @Volatile
     private var lastError: String? = null
 
+    @Volatile
+    private var nextScheduledAt: Long? = null
+
     private var job: Job? = null
 
     val status: IndexStatus
@@ -109,6 +115,7 @@ class LibraryIndex(
             indexedAt = indexedAt,
             found = found,
             error = lastError,
+            nextScheduledAt = nextScheduledAt,
         )
 
     /** Reads a previously saved index. A missing or unreadable file is just "no index yet". */
@@ -120,6 +127,23 @@ class LibraryIndex(
                 indexedAt = it.indexedAt
             }
             .onFailure { lastError = "Saved index could not be read: ${it.message}" }
+    }
+
+    /**
+     * Rebuilds at each of [schedule]'s moments for as long as [scope] lives. A crawl still running
+     * when the next one falls due is left to finish; that occurrence is simply skipped.
+     */
+    fun runOn(schedule: IndexSchedule, now: () -> ZonedDateTime = ZonedDateTime::now) {
+        scope.launch {
+            while (true) {
+                val due = schedule.next(now())
+                nextScheduledAt = due.toInstant().toEpochMilli()
+                delay(Duration.between(now(), due).toMillis().coerceAtLeast(0))
+                startRebuild()
+                // Past the moment just fired, so next() cannot hand the same one back.
+                delay(SCHEDULE_SETTLE_MILLIS)
+            }
+        }
     }
 
     /** @return false if a crawl is already running, which is left to finish. */
@@ -214,6 +238,7 @@ class LibraryIndex(
     companion object {
         private const val MAX_ATTEMPTS = 3
         private const val RETRY_DELAY_MILLIS = 5_000L
+        private const val SCHEDULE_SETTLE_MILLIS = 1_000L
 
         /**
          * Builds album and artist entries from the tracks' own artist/album tags.

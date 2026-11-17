@@ -20,6 +20,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -141,6 +142,12 @@ private suspend fun ApplicationCall.api(config: Config, block: suspend (Paramete
         // `cid` would reach the HEOS port as a second command. Nothing this API accepts needs one.
         params.forEach { _, values -> values.forEach(::rejectControlCharacters) }
         respondJson(HttpStatusCode.OK, block(params))
+    } catch (e: TimeoutCancellationException) {
+        // Before the CancellationException it is a subclass of: this is the receiver not answering a
+        // command, not this request being cancelled. Rethrown as a cancellation it reached the
+        // caller as a bare "internal error" - seen against the real unit, on a get_queue that took
+        // twenty seconds.
+        respondError(HttpStatusCode.GatewayTimeout, "the receiver did not answer in time")
     } catch (e: CancellationException) {
         throw e
     } catch (e: ApiException) {

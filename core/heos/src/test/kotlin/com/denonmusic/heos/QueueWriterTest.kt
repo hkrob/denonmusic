@@ -25,6 +25,7 @@ class QueueWriterTest {
         server.onSuccess("browse/add_to_queue")
         server.onSuccess("player/clear_queue")
         server.onSuccess("player/set_play_state")
+        queueCounts(26)
         connection = HeosConnection(server.host, server.port, commandTimeoutMillis = 5_000)
         client = HeosClient(connection)
     }
@@ -33,6 +34,18 @@ class QueueWriterTest {
     fun tearDown() {
         connection.shutdown()
         server.close()
+    }
+
+    /** Answers each `get_queue` with the next of [counts], repeating the last one for good. */
+    private fun queueCounts(vararg counts: Int) {
+        var asked = 0
+        server.on("player/get_queue") { line ->
+            val count = counts[minOf(asked++, counts.lastIndex)]
+            listOf(
+                """{"heos":{"command":"player/get_queue","result":"success","message":"pid=1&range=0,0&returned=1&count=$count""" +
+                    """&${HeosProtocol.SEQUENCE}=${FakeHeosServer.sequenceArgOf(line)}"},"payload":[]}""",
+            )
+        }
     }
 
     /** Each command reduced to its path plus the one argument that distinguishes it. */
@@ -48,6 +61,7 @@ class QueueWriterTest {
 
     @Test
     fun `a multi-part replace clears, appends every part, then plays`() = runBlocking {
+        queueCounts(13, 13, 26, 26)
         connection.connect()
         val completed = mutableListOf<Int>()
 
@@ -60,9 +74,80 @@ class QueueWriterTest {
 
         assertEquals(
             listOf("player/clear_queue", "add cid=disc1 aid=3", "add cid=disc2 aid=3", "state play"),
-            sent(),
+            sent().filterNot { it == "player/get_queue" },
         )
         assertEquals(listOf(1, 2), completed)
+    }
+
+    @Test
+    fun `each add is allowed to land before the next command is sent`() = runBlocking {
+        // After the first add the receiver is still ingesting (13, then all 26); after the second
+        // it reports 52 straight away. Neither the second add nor the play may be sent until the
+        // count has passed where it was and read the same twice.
+        queueCounts(13, 26, 26, 52, 52)
+        connection.connect()
+
+        client.addAllToQueue(
+            pid = "1",
+            targets = listOf(QueueTarget("1024", "disc1", null), QueueTarget("1024", "disc2", null)),
+            criteria = AddCriteria.ReplaceAndPlay,
+        )
+
+        assertEquals(
+            listOf(
+                "player/clear_queue",
+                "add cid=disc1 aid=3", "player/get_queue", "player/get_queue", "player/get_queue",
+                "add cid=disc2 aid=3", "player/get_queue", "player/get_queue",
+                "state play",
+            ),
+            sent(),
+        )
+    }
+
+    @Test
+    fun `appending to a queue that already has items waits for growth past its starting size`() = runBlocking {
+        // 40 already queued: a reading of 40 twice must not be mistaken for the add having landed.
+        queueCounts(40, 40, 40, 41, 41, 42, 42)
+        connection.connect()
+
+        client.addAllToQueue(
+            pid = "1",
+            targets = listOf(QueueTarget("1024", "a", "t1"), QueueTarget("1024", "a", "t2")),
+            criteria = AddCriteria.AddToEnd,
+        )
+
+        val commands = sent()
+        assertEquals("player/get_queue", commands.first(), "the starting size is read before anything is added")
+        assertEquals(7, commands.count { it == "player/get_queue" })
+        assertEquals(listOf("add cid=a aid=3", "add cid=a aid=3"), commands.filter { it.startsWith("add") })
+    }
+
+    @Test
+    fun `a single add is not paced at all`() = runBlocking {
+        connection.connect()
+
+        client.addAllToQueue("1", listOf(QueueTarget("1024", "album", null)), AddCriteria.AddToEnd)
+
+        assertEquals(listOf("add cid=album aid=3"), sent())
+    }
+
+    @Test
+    fun `a receiver that will not report its queue is still told to play`() = runBlocking {
+        server.on("player/get_queue") { line ->
+            listOf(
+                """{"heos":{"command":"player/get_queue","result":"fail","message":"eid=2&text=ID Not Valid""" +
+                    """&${HeosProtocol.SEQUENCE}=${FakeHeosServer.sequenceArgOf(line)}"}}""",
+            )
+        }
+        connection.connect()
+
+        client.addAllToQueue(
+            pid = "1",
+            targets = listOf(QueueTarget("1024", "disc1", null), QueueTarget("1024", "disc2", null)),
+            criteria = AddCriteria.ReplaceAndPlay,
+        )
+
+        assertEquals("state play", sent().last())
     }
 
     @Test
@@ -76,6 +161,7 @@ class QueueWriterTest {
 
     @Test
     fun `only the first part carries a non-replacing criteria`() = runBlocking {
+        queueCounts(26, 27, 27, 28, 28)
         connection.connect()
 
         client.addAllToQueue(
@@ -84,6 +170,6 @@ class QueueWriterTest {
             criteria = AddCriteria.PlayNext,
         )
 
-        assertEquals(listOf("add cid=a aid=2", "add cid=b aid=3"), sent())
+        assertEquals(listOf("add cid=a aid=2", "add cid=b aid=3"), sent().filterNot { it == "player/get_queue" })
     }
 }

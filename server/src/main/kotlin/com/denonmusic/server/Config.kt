@@ -13,6 +13,7 @@ data class Config(
     val dataDir: File = File(DEFAULT_DATA_DIR),
     val maxVolume: Int = DEFAULT_MAX_VOLUME,
     val volumeStep: Int = DEFAULT_VOLUME_STEP,
+    val indexSchedule: IndexSchedule? = null,
     val heosPort: Int = com.denonmusic.heos.HeosConnection.DEFAULT_PORT,
     val avrPort: Int = com.denonmusic.avr.AvrConnection.DEFAULT_PORT,
 ) {
@@ -45,6 +46,7 @@ data class Config(
                 dataDir = File(env["DENON_DATA_DIR"]?.takeIf { it.isNotBlank() } ?: DEFAULT_DATA_DIR),
                 maxVolume = int("DENON_MAX_VOLUME", DEFAULT_MAX_VOLUME).coerceIn(0, 100),
                 volumeStep = int("DENON_VOLUME_STEP", DEFAULT_VOLUME_STEP).coerceIn(1, 20),
+                indexSchedule = IndexSchedule.parse(env["DENON_REINDEX_AT"], env["DENON_REINDEX_DAYS"]),
             )
         }
     }

@@ -1,14 +1,23 @@
 package com.denonmusic.server
 
 import com.denonmusic.heos.AddCriteria
+import com.denonmusic.heos.HeosClient
 import com.denonmusic.heos.HeosCommandException
 import com.denonmusic.heos.PlayState
 import com.denonmusic.heos.QueueCollection
 import com.denonmusic.heos.QueueTarget
 import com.denonmusic.heos.QueueTargetResolver
 import com.denonmusic.heos.addAllToQueue
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -35,7 +44,25 @@ class Controller(
     private val config: Config,
     private val receiver: Receiver,
     private val index: LibraryIndex,
+    private val scope: CoroutineScope,
+    private val firstAddSettleMillis: Long = FIRST_ADD_SETTLE_MILLIS,
 ) {
+    /** Serialises everything that rewrites the queue, so a background append is never raced. */
+    private val queueLock = Mutex()
+
+    /** The tail of an album or artist still being appended behind the music - see [addFoldersInBackground]. */
+    private var appendJob: Job? = null
+
+    /**
+     * Runs [block] as the only thing rewriting the queue, after stopping any append still in flight.
+     * Without the stop, "play Prince" followed by "play something else" would go on feeding Prince
+     * into the new queue for another half a minute.
+     */
+    private suspend fun <T> rewritingQueue(block: suspend () -> T): T = queueLock.withLock {
+        appendJob?.cancelAndJoin()
+        appendJob = null
+        block()
+    }
 
     // -- state -------------------------------------------------------------
 
@@ -132,17 +159,28 @@ class Controller(
 
     // -- queue -------------------------------------------------------------
 
+    /**
+     * The whole queue, not its first page. `get_queue` hands back at most a page per call, and the
+     * first album played through this server on the real receiver - three folders, well over fifty
+     * tracks - came back as exactly fifty.
+     */
     suspend fun queue() = buildJsonArray {
         val (client, pid) = receiver.player()
-        client.getQueue(pid).forEach { item ->
-            add(
-                buildJsonObject {
-                    put("qid", item.qid)
-                    put("song", item.song)
-                    put("artist", item.artist)
-                    put("album", item.album)
-                },
-            )
+        var start = 0
+        while (start < MAX_QUEUE_ITEMS) {
+            val page = client.getQueue(pid, start)
+            page.forEach { item ->
+                add(
+                    buildJsonObject {
+                        put("qid", item.qid)
+                        put("song", item.song)
+                        put("artist", item.artist)
+                        put("album", item.album)
+                    },
+                )
+            }
+            if (page.size < HeosClient.DEFAULT_PAGE_SIZE) break
+            start += page.size
         }
     }
 
@@ -152,10 +190,10 @@ class Controller(
         return ok()
     }
 
-    suspend fun clearQueue(): JsonObject {
+    suspend fun clearQueue(): JsonObject = rewritingQueue {
         val (client, pid) = receiver.player()
         client.clearQueue(pid)
-        return ok()
+        ok()
     }
 
     /**
@@ -168,34 +206,60 @@ class Controller(
      *
      * @return how many `add_to_queue` targets were sent.
      */
-    suspend fun addToQueue(sid: String, cid: String?, mid: String?, criteria: AddCriteria): Int {
-        if (mid != null) {
-            val (client, pid) = receiver.player()
-            client.addAllToQueue(pid, listOf(QueueTarget(sid, cid.orEmpty(), mid)), criteria)
-            return 1
-        }
-        return addFoldersToQueue(listOf(sid to cid), criteria)
-    }
-
-    /**
-     * Queues several folders as one action - an album spread over disc folders, or an artist. Every
-     * folder is resolved before anything is queued, so being over the limit costs nothing but the
-     * browsing, and the whole lot goes through one [addAllToQueue] and therefore one replace.
-     */
-    private suspend fun addFoldersToQueue(folders: List<Pair<String, String?>>, criteria: AddCriteria): Int {
+    suspend fun addToQueue(sid: String, cid: String?, mid: String?, criteria: AddCriteria): Int = rewritingQueue {
         val (client, pid) = receiver.player()
-        val limit = QueueTargetResolver.DEFAULT_MAX_QUEUE_TARGETS
-        val targets = ArrayList<QueueTarget>()
-        for ((sid, cid) in folders) {
-            when (val collected = QueueTargetResolver.collect(client, sid, cid, maxTargets = limit - targets.size)) {
-                is QueueCollection.TooMany ->
-                    throw ApiException(400, "too many items to queue at once (limit $limit) - ask for something smaller")
-                is QueueCollection.Complete -> targets += collected.targets
-            }
+        if (mid != null) {
+            client.addAllToQueue(pid, listOf(QueueTarget(sid, cid.orEmpty(), mid)), criteria)
+            return@rewritingQueue 1
+        }
+        val targets = when (val collected = QueueTargetResolver.collect(client, sid, cid)) {
+            is QueueCollection.TooMany ->
+                throw ApiException(400, "too many items to queue at once (limit ${collected.limit}) - ask for something smaller")
+            is QueueCollection.Complete -> collected.targets
         }
         if (targets.isEmpty()) throw ApiException(404, "nothing playable found there")
         client.addAllToQueue(pid, targets, criteria)
-        return targets.size
+        targets.size
+    }
+
+    /**
+     * Queues an album or artist: the folders its tracks sit directly in, each as one container add.
+     *
+     * The first folder goes in on its own, with [criteria], and the call returns; the rest are
+     * appended behind it while it plays. That shape comes from timing the alternative on the real
+     * receiver (2026-11-17). Each add has to be allowed to land before the next command - see
+     * `addAllToQueue` - which is over a second a folder, so queueing everything before starting
+     * anything took 23 seconds for a five-folder artist and two minutes for twenty-five folders. A
+     * spoken request cannot wait that long to hear something.
+     *
+     * No [QueueTargetResolver] walk here, unlike [addToQueue]: these folders are known to hold
+     * tracks at their own level, which is what makes a folder a playable container. Walking them
+     * turned one folder that also held a `covers` subfolder into twelve single-track adds.
+     *
+     * A lone first add is `aid=4` sent alone when replacing, which is the form the receiver carries
+     * out correctly, and nothing follows it until [firstAddSettleMillis] has passed and the queue
+     * has been read once - a read the receiver holds until it has finished ingesting.
+     */
+    private suspend fun addFoldersInBackground(folders: List<FolderRef>, criteria: AddCriteria): Int = rewritingQueue {
+        val (client, pid) = receiver.player()
+        val targets = folders.map { QueueTarget(it.sid, it.cid, null) }
+        client.addAllToQueue(pid, targets.take(1), criteria)
+        val rest = targets.drop(1)
+        if (rest.isNotEmpty()) {
+            appendJob = scope.launch {
+                delay(firstAddSettleMillis)
+                try {
+                    client.getQueueCount(pid)
+                    client.addAllToQueue(pid, rest, AddCriteria.AddToEnd)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Nobody is waiting on this any more; the log is the only place left to say so.
+                    System.err.println("denonmusic-server: appending ${rest.size} more folders failed: ${e.message}")
+                }
+            }
+        }
+        targets.size
     }
 
     // -- search and intent -------------------------------------------------
@@ -258,7 +322,7 @@ class Controller(
         val folders = entry.folders.take(MAX_FOLDERS_PER_REQUEST)
         val queued = try {
             if (folders.isNotEmpty()) {
-                addFoldersToQueue(folders.map { it.sid to it.cid }, criteria)
+                addFoldersInBackground(folders, criteria)
             } else {
                 addToQueue(entry.sid, entry.cid, entry.mid, criteria)
             }
@@ -292,6 +356,7 @@ class Controller(
             put("indexedAt", status.indexedAt)
             put("found", status.found)
             put("error", status.error)
+            put("nextScheduledAt", status.nextScheduledAt)
         }
     }
 
@@ -345,8 +410,18 @@ class Controller(
     companion object {
         const val MAX_SEARCH_LIMIT = 50
 
+        /** Stops a receiver that never sends a short page from being asked for one forever. */
+        const val MAX_QUEUE_ITEMS = 5_000
+
         /** How many folders of an album or artist one spoken request queues - see [playFromSearch]. */
         const val MAX_FOLDERS_PER_REQUEST = 25
+
+        /**
+         * How long a lone first add is left alone before the rest follow. An `aid=4` with another
+         * add straight behind it loses both its replace and its play; the longest ingest measured
+         * for one folder was 1.3s.
+         */
+        const val FIRST_ADD_SETTLE_MILLIS = 2_000L
 
         val ACTIONS = listOf(
             "play", "play_now", "play_next", "queue", "resume", "pause", "stop", "next", "previous",
