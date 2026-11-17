@@ -16,6 +16,14 @@ About tab's CHANGELOG is the authority for what each version changed.) All six p
 [`plan.md`](plan.md) are done and were verified end-to-end against the real AVR-X4500H. Everything
 since then is listed below, newest first, with what was and was not checked on real hardware.
 
+- **Unreleased, branch `claude/server`** - A headless control server (`:server`, see
+  [`server/README.md`](../server/README.md)) for Home Assistant and voice control, and the move of
+  `HeosSession`, `AvrSession` and the multi-part queue sequence from `:app` into the core modules so
+  both share them. **The app has not been run on a phone since that move** - it builds and its
+  tests pass, nothing more. Against the receiver the server has run read-only only: `/status`,
+  `/queue` and a full index crawl. **No play, queue, volume or power command from the server has
+  met real hardware**, the Docker image has never been built, and the Home Assistant config and
+  Ollama prompt have never run. Detail in the dated entry at the end of this file.
 - **0.1.33** - Security/robustness fix to the two small HTTP servers, found by a review pass rather
   than a user report. With LAN control on, `GET /status?x=%zz` crashed the app with no token:
   `URLDecoder` throws on a bad escape, the query was decoded before the token check, and an
@@ -1298,3 +1306,52 @@ Also in this release: `ci.yml`'s JVM job now runs `:core:plex:test`, which it ha
 a build gotcha from the project move: Gradle's incremental dexing state still named the old
 `/workspace/android-denonmusic` path and failed `:app:mergeLibDexDebug` with "is located outside
 the root directory"; `./gradlew clean` cleared it.
+
+## A headless server, and what its first crawl of the real library showed (2026-11-17)
+
+Not a release. Branch `claude/server`; no version bump.
+
+The goal is voice control without the phone: a satellite, Home Assistant, a local model turning the
+utterance into `{action, query}`, and something on the LAN that owns the receiver's connections and
+acts on it. That something is `:server`, a pure-JVM Ktor application packaged as a Docker container.
+
+**What moved.** The server needs the app's reconnect/heartbeat/uncached-pid behaviour and its
+clear / `aid=3` / play sequence for a multi-part replace, and all of it lived in `:app`.
+`HeosSession` and `AvrSession` are now in `:core:heos` and `:core:avr` (injection annotations
+replaced by `@Provides` in `AppModule`, plus an optional port so a test can aim them at a fake), and
+`HeosPlaybackStarter.addAll` delegates to `addAllToQueue` in `:core:heos`. The fake receivers moved
+to `testFixtures` so `:server` tests against the same harness. No behaviour change was intended for
+the app and none was verified on a device.
+
+**Measured against the receiver, from the server's host (not a phone):**
+
+- Three simultaneous connections to port 23, and three to port 1255, were all answered, and the
+  first still worked afterwards. Whatever makes Home Assistant's `denonavr` integration and the app
+  contend, it is not a one-connection limit at that count. The mechanism is still unknown.
+- In standby (`PWSTANDBY`, `ZMOFF`) the receiver answered `heart_beat`, `get_players`,
+  `get_now_playing_media`, `get_queue`, `SI?`, `MS?` and `MU?`, and served an entire library crawl.
+- A full crawl by the server finished with **27,425 entries in about 30 minutes** (the phone took 50
+  for 27,428 on 2026-10-10). `/status` kept answering in about 0.25 s throughout, so a crawl does
+  not starve control commands sharing its connection.
+- A malformed percent escape (`?q=%zz`) is decoded by Ktor while it is still choosing a route, ahead
+  of the handler's own error handling: a bare 500 and a stack trace, token or no token. Found by
+  sending it to the running server; fixed, with a raw-socket test, since Ktor's test client refuses
+  to build that URL.
+
+**What the real index showed about search.** The first version ranked folders and tracks, as the
+app's Search does. On this library that could not play "The Wall": it is three sibling folders
+(`01 - The Wall, Disc 1 - Remaster`, ...) with no parent of that name. The numbers behind the fix:
+23,608 tracks, every one carrying artist and album tags; 1,607 tagged albums, 262 of them spread
+over more than one folder; no folder holding more than one album; three different folders named
+`Prince`. So the server now derives album and artist entries from the tags, each listing the
+folders its tracks are in, and drops a folder whose track titles repeat one already listed (the same
+album filed under two paths). One artist came to 610 folders, which is why a request queues at most
+25 and says so.
+
+**Not done, not verified.** Nothing that changes the receiver's state was sent. Whether a HEOS
+`play` wakes a unit in standby is unmeasured, and the server does not power it on. The claim that a
+plain `add_to_queue` of a multi-disc container queues nothing is still the app's comment, not a
+measurement; the server walks every container regardless. The image was not built (no docker on
+this host) - only its build stage's Gradle command, from a copy of the context with no SDK. The
+Home Assistant YAML parses and its templates render; it has not run in Home Assistant, and the
+Ollama prompt has not met a model.

@@ -268,6 +268,20 @@ class ApiTest {
     }
 
     @Test
+    fun `an artist with more folders than one request queues is cut short and says so`() = api {
+        val folders = (1..30).map { "f$it" }
+        buildIndex(
+            mapOf<String?, List<String>>(null to folders.map { FakeReceiver.folder("Album $it", it) }) +
+                folders.associateWith { listOf(track("Song $it", "m$it", "Prolific", "Album $it")) },
+        )
+
+        val reply = authedPost("/intent", """{"action":"play","query":"prolific","type":"artist"}""").json()
+
+        assertEquals("Playing Prolific, the first 25 of 30 albums", reply["speech"]!!.jsonPrimitive.content)
+        assertEquals(25, fake.sent("aid").count { it.startsWith("browse/add_to_queue") })
+    }
+
+    @Test
     fun `queue appends rather than replaces`() = api {
         buildIndex(library)
 

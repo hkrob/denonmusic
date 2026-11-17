@@ -163,21 +163,35 @@ class Controller(
      *
      * A container is always walked with [QueueTargetResolver] rather than handed to `add_to_queue`
      * as it is: a multi-disc album has no tracks at its own level, and the app's own comments say a
-     * plain add of one queues nothing. The walk costs a browse per folder; it is what makes "play
+     * plain add of one queues nothing (not re-measured here). The walk costs a browse per folder; it is what makes "play
      * this artist" work at all.
      *
      * @return how many `add_to_queue` targets were sent.
      */
     suspend fun addToQueue(sid: String, cid: String?, mid: String?, criteria: AddCriteria): Int {
-        val (client, pid) = receiver.player()
         if (mid != null) {
+            val (client, pid) = receiver.player()
             client.addAllToQueue(pid, listOf(QueueTarget(sid, cid.orEmpty(), mid)), criteria)
             return 1
         }
-        val targets = when (val collected = QueueTargetResolver.collect(client, sid, cid)) {
-            is QueueCollection.TooMany ->
-                throw ApiException(400, "too many items to queue at once (limit ${collected.limit}) - ask for something smaller")
-            is QueueCollection.Complete -> collected.targets
+        return addFoldersToQueue(listOf(sid to cid), criteria)
+    }
+
+    /**
+     * Queues several folders as one action - an album spread over disc folders, or an artist. Every
+     * folder is resolved before anything is queued, so being over the limit costs nothing but the
+     * browsing, and the whole lot goes through one [addAllToQueue] and therefore one replace.
+     */
+    private suspend fun addFoldersToQueue(folders: List<Pair<String, String?>>, criteria: AddCriteria): Int {
+        val (client, pid) = receiver.player()
+        val limit = QueueTargetResolver.DEFAULT_MAX_QUEUE_TARGETS
+        val targets = ArrayList<QueueTarget>()
+        for ((sid, cid) in folders) {
+            when (val collected = QueueTargetResolver.collect(client, sid, cid, maxTargets = limit - targets.size)) {
+                is QueueCollection.TooMany ->
+                    throw ApiException(400, "too many items to queue at once (limit $limit) - ask for something smaller")
+                is QueueCollection.Complete -> targets += collected.targets
+            }
         }
         if (targets.isEmpty()) throw ApiException(404, "nothing playable found there")
         client.addAllToQueue(pid, targets, criteria)
@@ -238,8 +252,16 @@ class Controller(
             else -> AddCriteria.AddToEnd
         }
         val entry = best.entry
+        // An artist can be hundreds of folders - 610 for one on the library this was first run
+        // against - and each costs a browse and an add the receiver takes its time over. A spoken
+        // request gets the first few, promptly, and is told so, rather than minutes of silence.
+        val folders = entry.folders.take(MAX_FOLDERS_PER_REQUEST)
         val queued = try {
-            addToQueue(entry.sid, entry.cid, entry.mid, criteria)
+            if (folders.isNotEmpty()) {
+                addFoldersToQueue(folders.map { it.sid to it.cid }, criteria)
+            } else {
+                addToQueue(entry.sid, entry.cid, entry.mid, criteria)
+            }
         } catch (e: HeosCommandException) {
             // The ids in the index are only as good as the receiver's current view of the library.
             throw ApiException(502, "the receiver refused '${entry.name}' (${e.message}) - the index may be stale")
@@ -249,11 +271,13 @@ class Controller(
             AddCriteria.PlayNext -> "Playing next:"
             AddCriteria.AddToEnd -> "Queued"
         }
+        val partial = if (folders.size < entry.folders.size) ", the first ${folders.size} of ${entry.folders.size} albums" else ""
         return buildJsonObject {
             put("ok", true)
             put("action", action)
-            put("speech", "$verb ${entry.name}" + (entry.artist?.let { " by $it" }.orEmpty()))
+            put("speech", "$verb ${entry.name}" + (entry.artist?.let { " by $it" }.orEmpty()) + partial)
             put("queued", queued)
+            put("truncated", partial.isNotEmpty())
             put("chosen", best.toJson())
             putJsonArray("alternatives") { hits.drop(1).forEach { add(it.toJson()) } }
         }
@@ -281,9 +305,10 @@ class Controller(
     private fun parseKind(type: String?): SearchRanking.Kind? = when (type?.trim()?.lowercase()) {
         null, "", "any" -> null
         "track", "song" -> SearchRanking.Kind.Track
-        // An artist and an album are both folders to the index - see SearchRanking.
-        "container", "album", "artist", "folder" -> SearchRanking.Kind.Container
-        else -> throw ApiException(400, "unknown type '$type', expected track, album, artist or any")
+        "album", "record" -> SearchRanking.Kind.Album
+        "artist", "band" -> SearchRanking.Kind.Artist
+        "folder", "container" -> SearchRanking.Kind.Container
+        else -> throw ApiException(400, "unknown type '$type', expected track, album, artist, folder or any")
     }
 
     private fun SearchRanking.Scored.toJson() = buildJsonObject {
@@ -295,6 +320,19 @@ class Controller(
         put("sid", entry.sid)
         put("cid", entry.cid)
         put("mid", entry.mid)
+        // Only on an album or artist, which is the folders its tracks are in rather than one cid.
+        if (entry.folders.isNotEmpty()) {
+            putJsonArray("folders") {
+                entry.folders.forEach { folder ->
+                    add(
+                        buildJsonObject {
+                            put("sid", folder.sid)
+                            put("cid", folder.cid)
+                        },
+                    )
+                }
+            }
+        }
     }
 
     private fun ok(extra: JsonObjectBuilder.() -> Unit = {}) = buildJsonObject {
@@ -306,6 +344,9 @@ class Controller(
 
     companion object {
         const val MAX_SEARCH_LIMIT = 50
+
+        /** How many folders of an album or artist one spoken request queues - see [playFromSearch]. */
+        const val MAX_FOLDERS_PER_REQUEST = 25
 
         val ACTIONS = listOf(
             "play", "play_now", "play_next", "queue", "resume", "pause", "stop", "next", "previous",

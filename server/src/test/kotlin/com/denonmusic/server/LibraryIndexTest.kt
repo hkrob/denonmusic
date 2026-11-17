@@ -72,9 +72,8 @@ class LibraryIndexTest {
 
         assertEquals("ready", index.status.state)
         assertEquals(3, index.status.count)
-        val album = index.search("the wall").first().entry
-        assertEquals(SearchRanking.Kind.Container, album.kind)
-        assertEquals("wall", album.cid, "a container is addressed by its own cid, so it can be walked")
+        val folder = index.search("the wall", kind = SearchRanking.Kind.Container).first().entry
+        assertEquals("wall", folder.cid, "a container is addressed by its own cid, so it can be walked")
         val song = index.search("comfortably numb").first().entry
         assertEquals("wall", song.cid, "a track is addressed by its enclosing folder")
         assertEquals("t1", song.mid)
@@ -87,7 +86,74 @@ class LibraryIndexTest {
 
         index.rebuildAndWait()
 
-        assertEquals("The Wall", index.search("wall", artist = "pink floyd").first().entry.name)
+        val hit = index.search("wall", artist = "pink floyd", kind = SearchRanking.Kind.Container).first().entry
+        assertEquals("The Wall", hit.name)
+    }
+
+    // -- albums and artists derived from tags ----------------------------------
+
+    private fun taggedTrack(name: String, cid: String, artist: String, album: String) = IndexedEntry(
+        name = name,
+        artist = artist,
+        album = album,
+        kind = SearchRanking.Kind.Track,
+        sid = "1024",
+        cid = cid,
+        mid = "$cid-$name",
+    )
+
+    @Test
+    fun `an album spread over sibling disc folders is one entry listing them in order`() {
+        // The shape that had no answer on the real library: no folder is called "The Wall".
+        val derived = LibraryIndex.derive(
+            listOf(
+                taggedTrack("In the Flesh", "disc1", "Pink Floyd", "The Wall"),
+                taggedTrack("Hey You", "disc2", "Pink Floyd", "The Wall"),
+                taggedTrack("Money", "dsotm", "Pink Floyd", "Dark Side of the Moon"),
+            ),
+        )
+
+        val wall = derived.single { it.kind == SearchRanking.Kind.Album && it.name == "The Wall" }
+        assertEquals(listOf("disc1", "disc2"), wall.folders.map { it.cid })
+        assertEquals("Pink Floyd", wall.artist)
+        val artist = derived.single { it.kind == SearchRanking.Kind.Artist }
+        assertEquals(listOf("disc1", "disc2", "dsotm"), artist.folders.map { it.cid })
+    }
+
+    @Test
+    fun `the same album filed in two places is listed once`() {
+        val derived = LibraryIndex.derive(
+            listOf(
+                taggedTrack("The Wheel", "indie", "PJ Harvey", "The Hope Six Demolition Project"),
+                taggedTrack("The Wheel", "new", "PJ Harvey", "The Hope Six Demolition Project"),
+            ),
+        )
+
+        assertEquals(listOf("indie"), derived.single { it.kind == SearchRanking.Kind.Album }.folders.map { it.cid })
+        assertEquals(listOf("indie"), derived.single { it.kind == SearchRanking.Kind.Artist }.folders.map { it.cid })
+    }
+
+    @Test
+    fun `two artists' albums of the same name stay apart`() {
+        val derived = LibraryIndex.derive(
+            listOf(taggedTrack("a", "x", "Weezer", "Greatest Hits"), taggedTrack("b", "y", "Queen", "Greatest Hits")),
+        )
+
+        assertEquals(2, derived.count { it.kind == SearchRanking.Kind.Album })
+    }
+
+    @Test
+    fun `derived entries are searchable but not what is counted or saved`() {
+        fake.serveTree(tree)
+        val file = File(dir, "index.json")
+        val index = index(file)
+
+        index.rebuildAndWait()
+
+        assertEquals(SearchRanking.Kind.Album, index.search("the wall").first().entry.kind)
+        assertEquals(SearchRanking.Kind.Artist, index.search("pink floyd").first().entry.kind)
+        assertEquals(3, index.status.count)
+        assertFalse(file.readText().contains("\"Album\""))
     }
 
     @Test

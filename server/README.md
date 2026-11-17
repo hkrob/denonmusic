@@ -53,8 +53,13 @@ The result is saved to `library-index.json` in the data directory and loaded at 
 fails leaves the previous index in place. Rebuild after adding music; the ids in the index are only
 as good as the receiver's current view of the library.
 
-The index knows folders and tracks. It cannot tell an artist folder from an album folder, so
-`type=album` and `type=artist` both mean "a folder".
+Four kinds of thing can be found. Folders and tracks are what the crawl saw. Albums and artists are
+derived from the tracks' own artist/album tags, because folders alone could not answer "play The
+Wall" on a real library (three sibling disc folders, none of that name). An album or artist plays
+the folders its tracks are in, in order; the same album filed in two places plays once. One request
+queues at most 25 folders, so "play Prince" plays the first 25 of however many there are and says so.
+
+With no `type`, a name shared by several kinds goes artist, then album, then folder, then track.
 
 ## API
 
@@ -64,7 +69,7 @@ Every route but `/health` needs the token.
 |---|---|
 | `GET /health` | Whether both control connections are up, and the index state. No token |
 | `GET /status` | Now playing, play state, volume, mute, power, input, sound mode |
-| `GET /search?q=&artist=&type=&limit=` | Ranked matches, each with the `sid`/`cid`/`mid` to queue it |
+| `GET /search?q=&artist=&type=&limit=` | Ranked matches, each with the `sid`/`cid`/`mid` to queue it, or `folders` for an album or artist. `type` is `track`, `album`, `artist`, `folder` or `any` |
 | `POST /intent` | JSON body `{"action","query","artist","type"}` - see below |
 | `POST /queue/add?sid=&cid=&mid=&criteria=` | Queue a track, or everything under a folder when `mid` is absent. `criteria` is `PlayNow`, `PlayNext`, `AddToEnd` or `ReplaceAndPlay` |
 | `GET /queue`, `POST /queue/play?qid=`, `POST /queue/clear` | The real HEOS queue |

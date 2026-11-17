@@ -9,13 +9,21 @@ import java.text.Normalizer
  * scrolls and wrong for a voice command, where one answer gets played and the rest are never seen.
  * So this scores how *well* a name matches, not just whether it does.
  *
- * What it cannot do is tell an artist from an album: the index is a crawl of folders (see
- * `LibraryIndexer` on why `By Folder` is the view walked), and a folder is a folder. The only kinds
- * are [Kind.Container] and [Kind.Track].
+ * Four kinds of thing can be found. [Kind.Container] and [Kind.Track] are what the crawl saw: a
+ * folder, a file. [Kind.Album] and [Kind.Artist] are derived from the tracks' own tags - see
+ * [LibraryIndex.derive] for why the folders alone were not enough on a real library.
  */
 object SearchRanking {
 
-    enum class Kind { Container, Track }
+    enum class Kind { Container, Track, Album, Artist }
+
+    /**
+     * Added when no kind was asked for, to settle a name that several kinds share. "Play Prince"
+     * means the artist, not his self-titled album; "play Thriller" means the album, not its title
+     * track; and a tagged album or artist is a better answer than a folder that happens to be named
+     * the same, since a real library has the same folder name in more than one place.
+     */
+    private val KIND_PREFERENCE = mapOf(Kind.Artist to 4, Kind.Album to 3, Kind.Container to 2, Kind.Track to 0)
 
     data class Scored(val entry: IndexedEntry, val score: Int)
 
@@ -90,9 +98,7 @@ object SearchRanking {
         if (artistTokens.isNotEmpty()) {
             score += if ((contextTokens + nameTokens).containsAll(artistTokens)) 15 else -20
         }
-        // "Play X" with no kind given usually means the album or the artist, and for a title track
-        // both exist under the same name.
-        if (kind == null && entry.kind == Kind.Container) score += 3
+        if (kind == null) score += KIND_PREFERENCE.getValue(entry.kind)
         return score
     }
 }

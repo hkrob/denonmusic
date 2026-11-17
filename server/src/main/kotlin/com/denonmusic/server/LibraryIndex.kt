@@ -17,11 +17,17 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
+/** A folder to queue: one part of an album or an artist that is spread over several. */
+@Serializable
+data class FolderRef(val sid: String, val cid: String)
+
 /**
  * One searchable row. [sid]/[cid] address the entry itself: for a container, the folder to walk when
  * queueing it; for a track, the enclosing folder, which with [mid] is what `add_to_queue` takes.
  * [context] is everything that places the entry - artist, album and the folders above it - so a
- * query that names the artist as well as the title has something to match against.
+ * query that names the artist as well as the title has something to match against. [folders] is
+ * set only on a derived album or artist, which is addressed by the folders its tracks are in rather
+ * than by one cid.
  */
 @Serializable
 data class IndexedEntry(
@@ -33,6 +39,7 @@ data class IndexedEntry(
     val cid: String? = null,
     val mid: String? = null,
     val context: String = "",
+    val folders: List<FolderRef> = emptyList(),
 ) {
     @Transient
     val nameNorm: String = SearchRanking.normalize(name)
@@ -71,8 +78,13 @@ class LibraryIndex(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** What the crawl found, and what is saved. */
     @Volatile
     private var entries: List<IndexedEntry> = emptyList()
+
+    /** [entries] plus the albums and artists derived from them - what a search actually looks through. */
+    @Volatile
+    private var searchable: List<IndexedEntry> = emptyList()
 
     @Volatile
     private var indexedAt: Long? = null
@@ -104,7 +116,7 @@ class LibraryIndex(
         if (!file.isFile) return
         runCatching { json.decodeFromString<IndexFile>(file.readText()) }
             .onSuccess {
-                entries = it.entries
+                publish(it.entries)
                 indexedAt = it.indexedAt
             }
             .onFailure { lastError = "Saved index could not be read: ${it.message}" }
@@ -150,7 +162,7 @@ class LibraryIndex(
                 }
                 val now = System.currentTimeMillis()
                 save(IndexFile(now, rows))
-                entries = rows
+                publish(rows)
                 indexedAt = now
                 lastError = null
                 return
@@ -176,7 +188,12 @@ class LibraryIndex(
     }
 
     fun search(query: String, artist: String? = null, kind: SearchRanking.Kind? = null, limit: Int = 10) =
-        SearchRanking.rank(entries, query, artist, kind, limit)
+        SearchRanking.rank(searchable, query, artist, kind, limit)
+
+    private fun publish(crawled: List<IndexedEntry>) {
+        entries = crawled
+        searchable = crawled + derive(crawled)
+    }
 
     private fun LibraryEntry.toIndexed(): IndexedEntry {
         // A container's path ends at the container itself; everything before that is where it sits.
@@ -194,8 +211,59 @@ class LibraryIndex(
         )
     }
 
-    private companion object {
-        const val MAX_ATTEMPTS = 3
-        const val RETRY_DELAY_MILLIS = 5_000L
+    companion object {
+        private const val MAX_ATTEMPTS = 3
+        private const val RETRY_DELAY_MILLIS = 5_000L
+
+        /**
+         * Builds album and artist entries from the tracks' own artist/album tags.
+         *
+         * The crawl walks folders, and the first real library it met (27,425 entries, 2026-11-17)
+         * showed what folders cannot answer. "The Wall" is three sibling folders with no folder of
+         * that name above them, so there was nothing to play; 262 of 1,607 tagged albums span more
+         * than one folder; and "Prince" is three different folders. The tags do answer it: every one
+         * of the 23,608 tracks carried both, and no folder held more than one album.
+         *
+         * An entry lists the folders its tracks are in, in crawl order. A folder whose track titles
+         * repeat one already listed is left out - the same album filed in two places would otherwise
+         * play twice.
+         */
+        fun derive(crawled: List<IndexedEntry>): List<IndexedEntry> {
+            class Group(val name: String, val artist: String?, val sid: String) {
+                val titlesByFolder = LinkedHashMap<String, MutableList<String>>()
+            }
+
+            val albums = LinkedHashMap<String, Group>()
+            val artists = LinkedHashMap<String, Group>()
+            for (track in crawled) {
+                if (track.kind != SearchRanking.Kind.Track) continue
+                val cid = track.cid ?: continue
+                val artist = track.artist?.takeIf { it.isNotBlank() }
+                val album = track.album?.takeIf { it.isNotBlank() }
+                val artistKey = artist?.let(SearchRanking::normalize)
+                if (album != null) {
+                    albums.getOrPut("${track.sid}|$artistKey|${SearchRanking.normalize(album)}") { Group(album, artist, track.sid) }
+                        .titlesByFolder.getOrPut(cid) { mutableListOf() } += track.nameNorm
+                }
+                if (artist != null) {
+                    artists.getOrPut("${track.sid}|$artistKey") { Group(artist, null, track.sid) }
+                        .titlesByFolder.getOrPut(cid) { mutableListOf() } += track.nameNorm
+                }
+            }
+
+            fun Group.toEntry(kind: SearchRanking.Kind): IndexedEntry {
+                val seen = HashSet<List<String>>()
+                return IndexedEntry(
+                    name = name,
+                    artist = artist,
+                    kind = kind,
+                    sid = sid,
+                    context = artist.orEmpty(),
+                    folders = titlesByFolder.filter { (_, titles) -> seen.add(titles.sorted()) }.keys.map { FolderRef(sid, it) },
+                )
+            }
+            return albums.values.map { it.toEntry(SearchRanking.Kind.Album) } +
+                artists.values.map { it.toEntry(SearchRanking.Kind.Artist) }
+        }
     }
 }

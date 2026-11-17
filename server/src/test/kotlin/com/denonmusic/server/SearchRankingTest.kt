@@ -62,6 +62,16 @@ class SearchRankingTest {
     }
 
     @Test
+    fun `an artist is preferred to a self-titled album, and either to a folder of the same name`() {
+        val album = IndexedEntry(name = "Prince", artist = "Prince", kind = Kind.Album, sid = "1", context = "Prince")
+        val artist = IndexedEntry(name = "Prince", kind = Kind.Artist, sid = "1")
+        val entries = listOf(folder("Prince"), album, artist)
+
+        assertEquals(listOf(Kind.Artist, Kind.Album, Kind.Container), SearchRanking.rank(entries, "prince").map { it.entry.kind })
+        assertEquals(Kind.Album, SearchRanking.rank(entries, "prince", kind = Kind.Album).single().entry.kind)
+    }
+
+    @Test
     fun `a named artist picks between two things with the same title`() {
         val entries = listOf(track("Hurt", "Nine Inch Nails"), track("Hurt", "Johnny Cash"))
 
