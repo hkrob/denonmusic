@@ -45,6 +45,8 @@ fun Application.api(config: Config, controller: Controller) {
         // Unauthenticated on purpose: a container health check has no token, and this says nothing
         // beyond whether the server can see the receiver.
         get("/health") { call.respondJson(HttpStatusCode.OK, controller.health()) }
+        // For a person with a browser: the same facts as /health and GET /index, as a page.
+        get("/") { call.respondText(controller.statusPage(), ContentType.Text.Html) }
 
         get("/status") { call.api(config) { controller.status() } }
 

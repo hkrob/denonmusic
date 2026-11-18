@@ -84,10 +84,11 @@ jacks" for Basement Jaxx), and counts against it otherwise.
 
 ## API
 
-Every route but `/health` needs the token.
+Every route but `/` and `/health` needs the token.
 
 | Route | What it does |
 |---|---|
+| `GET /` | A page for a browser: the same connection and index state, when the index was built and the next scheduled rebuild. No token |
 | `GET /health` | Whether both control connections are up, and the index state. No token |
 | `GET /status` | Now playing, play state, volume, mute, power, input, sound mode |
 | `GET /search?q=&artist=&type=&limit=` | Ranked matches, each with the `sid`/`cid`/`mid` to queue it, or `folders` for an album or artist. `type` (a filter) and `prefer` (a preference) are `track`, `album`, `artist`, `folder` or `any` |

@@ -66,6 +66,12 @@ class Controller(
 
     // -- state -------------------------------------------------------------
 
+    fun statusPage(): String = StatusPage.render(
+        heos = receiver.heos.state.value::class.simpleName.orEmpty(),
+        avr = receiver.avr.state.value::class.simpleName.orEmpty(),
+        index = index.status,
+    )
+
     fun health(): JsonObject = buildJsonObject {
         put("heos", receiver.heos.state.value::class.simpleName)
         put("avr", receiver.avr.state.value::class.simpleName)

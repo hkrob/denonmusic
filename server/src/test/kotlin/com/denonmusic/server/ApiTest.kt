@@ -8,7 +8,9 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.testing.ApplicationTestBuilder
@@ -122,6 +124,18 @@ class ApiTest {
 
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals("Connected", response.json()["heos"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `the root page needs no token and shows only connection and index state`() = api {
+        val response = client.get("/")
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals(ContentType.Text.Html, response.contentType()?.withoutParameters())
+        val page = response.bodyAsText()
+        assertContains(page, "<th>HEOS (port 1255)</th><td><span class=\"dot ok\"></span>Connected</td>")
+        assertContains(page, "none scheduled")
+        assertFalse(TOKEN in page, "the page must not echo the token")
     }
 
     @Test
