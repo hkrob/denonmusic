@@ -4,6 +4,20 @@ An Android controller for playing music held on an SMB share through a Denon AVR
 (HEOS Built-in), with queueing, a browser that remembers where you were, and a now-playing panel
 that tells you what the receiver is actually doing with the file.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/browse.png" width="220" alt="Browse: the receiver's library views"><br><sub>Browse</sub></td>
+    <td align="center"><img src="docs/screenshots/nowplaying.png" width="220" alt="Now Playing with transport, volume and signal info"><br><sub>Now Playing</sub></td>
+    <td align="center"><img src="docs/screenshots/queue.png" width="220" alt="The receiver's queue"><br><sub>Queue</sub></td>
+    <td align="center"><img src="docs/screenshots/avr.png" width="220" alt="AVR input, sound mode and output map"><br><sub>AVR</sub></td>
+  </tr>
+</table>
+
+Captured from v0.1.33 on an Android 14 emulator connected to a real AVR-X4500H. The receiver was in
+standby, so Now Playing shows the last track at rest (no artwork, 0:00) rather than live playback.
+
 ## The one design decision everything follows from
 
 The HEOS CLI offers two ways to start audio:

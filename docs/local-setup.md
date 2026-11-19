@@ -159,13 +159,17 @@ adb exec-out screencap -p > shot.png
   shade. A fresh image showed notifications that were not from this project (a Google account
   sign-in notice, a health-tracker reminder), and the same AVD has a separate
   `com.robcloud.bloodpressure.debug` package installed that this project does not own.
-- Blocker, 2026-10-06: while the screenshot session was in progress, something on this host kept
-  launching `com.robcloud.bloodpressure.debug` onto the emulator via `am start` (launch
-  flags `0x10000000`, from the shell uid, about every 15 seconds), so taps on DenonMusic's own
-  tab bar kept losing focus. The app itself launched and rendered correctly (Browse showed the
-  receiver's Plex source), but no clean Search/AVR/Settings screenshot was obtained. The fix is
-  to stop whatever is launching that package, or use a fresh AVD with nothing else installed, and
-  then retake the set listed under "Screenshots" in [`README.md`](../README.md).
+- Screenshots in the README were retaken 2026-11-19 from the published v0.1.33 APK on `shots_avd`,
+  against the real receiver in standby (nothing was played or powered on). The 2026-10-06 blocker -
+  something launching `com.robcloud.bloodpressure.debug` onto the emulator every ~15 s - did not
+  recur: `dumpsys activity activities | grep ResumedActivity` stayed on DenonMusic throughout. The
+  status bar was cleaned with SystemUI demo mode (`settings put global sysui_demo_allowed 1`, then
+  `am broadcast -a com.android.systemui.demo -e command ...` for `clock`, `battery`, `notifications`)
+  and the top 126 px cropped off, since the app's dark status-bar icons are unreadable on its dark
+  background. Left out on purpose: Settings (receiver IP, SMB host and user, Plex URL, LAN control
+  URL), Playlists (empty without a Plex token), Search (needs a full-library index build first), and
+  anything from the notification shade. A Now Playing shot during real playback still wants the
+  receiver powered on, which means choosing a volume first - a receiver in standby ignores `MV`.
 
 ### Local-machine gotchas
 
