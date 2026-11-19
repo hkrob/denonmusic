@@ -127,7 +127,7 @@ notification (including after the app's task is swiped away).
 
 ### Building here
 
-The project now lives on Linux (`/workspace/android-denonmusic`); it was developed on Windows up to
+The project lives on Linux (`/workspace/dev/android/denonmusic`); it was developed on Windows up to
 v0.1.18, which is why the session log below mentions Windows paths and tools. The Android Gradle
 plugin needs JDK 17+, so `JAVA_HOME` has to point at one or Gradle fails before it does anything.
 Here it is already Temurin 21, and the SDK is `/opt/android-sdk`:
@@ -172,7 +172,7 @@ adb exec-out screencap -p > shot.png
 - **`keystore.properties` has pointed at a path that no longer exists** (`C:/...` on the Windows
   machine), which fails `assembleRelease` with a missing-file error. Both it and `release.keystore`
   live at the repo root and are gitignored; `storeFile` should be
-  `/workspace/android-denonmusic/release.keystore`. Before pointing it anywhere new, confirm the
+  `/workspace/dev/android/denonmusic/release.keystore`. Before pointing it anywhere new, confirm the
   fingerprint with `keytool` - it has to match `EXPECTED_SIGNER` in `.github/workflows/release.yml`,
   or the APK will not install over an existing copy.
 - **Home Assistant's `denonavr` integration (`connaught`) competes for the receiver's control

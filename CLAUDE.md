@@ -41,6 +41,10 @@ once held a `C:/Users/...` path. The SDK has platforms 34 and 36 (`compileSdk` i
 (`shots_avd`, google_apis x86_64) with `/dev/kvm` available, so it boots headless in ~25 s. There is
 no API 36 image; install one with `sdkmanager` for version-specific checks.
 
+If `:app:mergeLibDexDebug` fails with "is located outside the root directory", or any error names
+the old `/workspace/android-denonmusic` path, the cause is stale incremental Gradle state left over
+from the move, not your change. Run `./gradlew clean` and re-run the full check.
+
 ## Protocol facts that have already cost time
 
 - **Port 23 (AVR telnet) has no correlation ids.** Replies are matched by prefix, so a prefix can
