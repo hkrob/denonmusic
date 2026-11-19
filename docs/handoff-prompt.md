@@ -75,8 +75,10 @@ Nothing here is a known defect. In rough order of usefulness:
 - The media card's transport buttons were verified on the older phone but **not on One UI** - the
   adb taps there kept missing the panel rather than failing. The code path is shared, so this is
   confirmation rather than suspicion.
-- **README screenshots** are not in the repo yet. The emulator recipe and the blocker that stopped
-  the capture are in docs/local-setup.md, "Emulator and screenshots".
+- **README screenshots** (docs/screenshots/, 2026-11-19) are Browse, Now Playing, Queue and AVR from
+  v0.1.33. Now Playing was captured with the receiver in standby, so it shows no artwork; a live
+  one needs the receiver on, and so a volume chosen first. How they were taken, and what was left
+  out and why, is in docs/local-setup.md, "Emulator and screenshots".
 
 ## Keeping this current
 
